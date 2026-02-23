@@ -1,0 +1,71 @@
+spring:
+  application:
+    name: kyc-service
+
+  datasource:
+    url: jdbc:mysql://localhost:3306/gatepay_kyc_service?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+    username: root
+    password: root
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      idle-timeout: 30000
+      connection-timeout: 20000
+      pool-name: HikariCP
+
+  jpa:
+    hibernate:
+      ddl-auto: update   # For dev; use 'validate' or 'none' in prod
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQL8Dialect
+        format_sql: true
+        show_sql: false
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    clean-on-validation-error: false
+    locations: classpath:db/migration
+
+logging:
+  level:
+    root: INFO
+    org.flywaydb: DEBUG
+    com.gatepay.kycservice: DEBUG
+    org.springframework: INFO
+
+server:
+  port: 8085
+  error:
+    include-stacktrace: NEVER
+    include-message: ALWAYS
+
+# Eureka client configuration
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+    register-with-eureka: true
+    fetch-registry: true
+    instance:
+      prefer-ip-address: true
+
+# Feign client configuration
+feign:
+  client:
+    config:
+      default:
+        connectTimeout: 9000
+        readTimeout: 8000
+
+
+cloudinary:
+  cloud-name: dm4dc4nbi
+  api-key: 746957422131865
+  api-secret: P1Shpim6BwUtinLKDndtKFUZ8Sg
+
+kyc:
+  idempotency:
+    ttl-minutes: 5

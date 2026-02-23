@@ -1,0 +1,5 @@
+ALTER TABLE kyc_requests
+ADD COLUMN nin VARCHAR(20),
+ADD COLUMN bvn VARCHAR(20),
+ADD COLUMN verified_by BIGINT,
+ADD COLUMN verified_at TIMESTAMP;

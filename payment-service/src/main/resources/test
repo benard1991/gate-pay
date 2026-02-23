@@ -1,0 +1,75 @@
+spring:
+  application:
+    name: payment-service
+
+  datasource:
+    url: jdbc:mysql://localhost:3306/gatepay_payment_service?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+    username: root
+    password: root
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      idle-timeout: 30000
+      connection-timeout: 20000
+      pool-name: HikariCP
+
+  jpa:
+    hibernate:
+      ddl-auto: update   # For dev; use 'validate' or 'none' in prod
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQL8Dialect
+        format_sql: true
+        show_sql: false
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    clean-on-validation-error: false
+    locations: classpath:db/migration
+
+logging:
+  level:
+    root: INFO
+    org.flywaydb: DEBUG
+    com.gatepay.userservice: DEBUG
+    org.springframework: INFO
+
+server:
+  port: 8087
+  error:
+    include-stacktrace: NEVER
+    include-message: ALWAYS
+
+# Eureka client configuration
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+    register-with-eureka: true
+    fetch-registry: true
+    instance:
+      prefer-ip-address: true  # Optional: register service using IP
+
+# Feign client configuration
+feign:
+  client:
+    config:
+      default:
+        connectTimeout: 5000
+        readTimeout: 5000
+
+
+# application.yml
+paystack:
+  secret-key: sk_test_fbee32bce6a1e530ce6870d28ebd4a3ba03b07ab
+  public-key: pk_test_4046bd86e7b41afefea42818a973c89da33e4d00
+  base-url: https://api.paystack.co
+  default-currency: NGN  # Force NGN as default
+
+flutterwave:
+  secret-key: FLWSECK_TEST-729955eebcf93eea3d69dec9790b4882-X
+  public-key: FLWPUBK_TEST-d9e7eec6f70f6ac8783228b4a078e14b-X
+  encryption_key: FLWSECK_TEST335e867ef682
+  base-url: https://api.flutterwave.com/v3

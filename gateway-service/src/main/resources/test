@@ -1,0 +1,246 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: gateway-service
+
+  main:
+    web-application-type: reactive
+
+  webflux:
+    cors:
+      allowed-origins: "*"
+      allowed-methods: "*"
+      allowed-headers: "*"
+      allow-credentials: true
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+  cloud:
+    gateway:
+      httpclient:
+        connect-timeout: 3000
+        response-timeout: 5s
+
+      routes:
+        # ==========================
+        # AUTH SERVICE ROUTES
+        # ==========================
+        - id: auth-service
+          uri: lb://auth-service
+          predicates:
+            - Path=/api/v1/auth/**
+          filters:
+            - StripPrefix=2
+            - name: CircuitBreaker
+              args:
+                name: authServiceCB
+                fallbackUri: forward:/fallback/auth
+            - name: Retry
+              args:
+                retries: 3
+                methods: GET, POST
+                statuses: BAD_GATEWAY, GATEWAY_TIMEOUT, INTERNAL_SERVER_ERROR
+                backoff:
+                  firstBackoff: 100ms
+                  maxBackoff: 1s
+                  factor: 2
+
+        # ==========================
+        # USER SERVICE ROUTES
+        # ==========================
+        - id: user-service
+          uri: lb://user-service
+          predicates:
+            - Path=/api/v1/users/**
+          filters:
+            - StripPrefix=2
+            - name: CircuitBreaker
+              args:
+                name: userServiceCB
+                fallbackUri: forward:/fallback/user
+            - name: Retry
+              args:
+                retries: 2
+                methods: GET
+                statuses: BAD_GATEWAY, GATEWAY_TIMEOUT, INTERNAL_SERVER_ERROR
+                backoff:
+                  firstBackoff: 100ms
+                  maxBackoff: 800ms
+                  factor: 2
+
+        # ==========================
+        # NOTIFICATION SERVICE ROUTES
+        # ==========================
+        - id: notification-service
+          uri: lb://notification-service
+          predicates:
+            - Path=/api/v1/notifications/**
+          filters:
+            - StripPrefix=2
+            - name: CircuitBreaker
+              args:
+                name: notificationServiceCB
+                fallbackUri: forward:/fallback/notification
+            - name: Retry
+              args:
+                retries: 2
+                methods: POST
+                statuses: BAD_GATEWAY, GATEWAY_TIMEOUT
+                backoff:
+                  firstBackoff: 200ms
+                  maxBackoff: 1s
+                  factor: 2
+
+        # ==========================
+        # KYC SERVICE ROUTES
+        # ==========================
+        - id: kyc-service
+          uri: lb://kyc-service
+          predicates:
+            - Path=/api/v1/kyc/**
+          filters:
+            - StripPrefix=2
+            - name: CircuitBreaker
+              args:
+                name: kycServiceCB
+                fallbackUri: forward:/fallback/kyc
+            - name: Retry
+              args:
+                retries: 2
+                methods: GET, POST
+                statuses: BAD_GATEWAY, GATEWAY_TIMEOUT, INTERNAL_SERVER_ERROR
+                backoff:
+                  firstBackoff: 200ms
+                  maxBackoff: 1s
+                  factor: 2
+
+
+        # ==========================
+        # PAYMENT SERVICE ROUTES
+        # ==========================
+        - id: payment-service
+          uri: lb://payment-service
+          predicates:
+            - Path=/api/v1/payment/**
+          filters:
+            - StripPrefix=2
+            - name: CircuitBreaker
+              args:
+                name: paymentServiceCB
+                fallbackUri: forward:/fallback/payment
+            - name: Retry
+              args:
+                retries: 2
+                methods: GET, POST
+                statuses: BAD_GATEWAY, GATEWAY_TIMEOUT, INTERNAL_SERVER_ERROR
+                backoff:
+                  firstBackoff: 200ms
+                  maxBackoff: 1s
+                  factor: 2
+
+# ==========================
+# RESILIENCE4J CIRCUIT BREAKER & TIMELIMITER
+# ==========================
+resilience4j:
+  circuitbreaker:
+    instances:
+      authServiceCB:
+        failure-rate-threshold: 50
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        wait-duration-in-open-state: 30s
+      userServiceCB:
+        failure-rate-threshold: 50
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        wait-duration-in-open-state: 30s
+      kycServiceCB:
+        failure-rate-threshold: 40
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        wait-duration-in-open-state: 45s
+      notificationServiceCB:
+        failure-rate-threshold: 60
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+        wait-duration-in-open-state: 30s
+      paymentServiceCB:
+        failure-rate-threshold: 50
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        wait-duration-in-open-state: 30s
+
+  timelimiter:
+    instances:
+      authServiceCB:
+        timeout-duration: 6s
+      userServiceCB:
+        timeout-duration: 6s
+      kycServiceCB:
+        timeout-duration: 6s
+      notificationServiceCB:
+        timeout-duration: 6s
+      paymentServiceCB:
+        timeout-duration: 30s
+# ==========================
+# EUREKA CLIENT CONFIGURATION
+# ==========================
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+    register-with-eureka: true
+    fetch-registry: true
+  instance:
+    prefer-ip-address: true
+    health-check-url-path: /actuator/health
+    metadata-map:
+      instanceId: ${spring.application.name}:${spring.application.instance_id:${random.value}}
+
+# ==========================
+# JWT CONFIGURATION
+# ==========================
+jwt:
+  secret: ${JWT_SECRET:U3Nh4sJt6+vGJx0XoRLtdmFY/NTK8omIGArWoUcfK8U}
+  expiration-ms: 3600000
+
+# ==========================
+# PUBLIC PATHS (JWT EXCLUDED)
+# ==========================
+gateway:
+  custom:
+    public-paths:
+      - /api/v1/auth/initiateLogin
+      - /api/v1/auth/verify-otp
+      - /api/v1/auth/validate
+      - /api/v1/auth/forgot-password
+      - /api/v1/auth/reset-password
+      - /api/v1/users/register
+      - /api/ping
+      - /actuator/health
+
+# ==========================
+# LOGGING CONFIGURATION
+# ==========================
+logging:
+  level:
+    org.springframework.security: DEBUG
+    com.gatepay.gatewayservice.security.JwtAuthFilter: TRACE
+    io.github.resilience4j.circuitbreaker: DEBUG
+
+# ==========================
+# ACTUATOR SETTINGS
+# ==========================
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info, prometheus
+  endpoint:
+    health:
+      show-details: always

@@ -1,0 +1,253 @@
+server:
+  port: ${SERVER_PORT:8080}
+
+spring:
+  application:
+    name: ${SPRING_APPLICATION_NAME:gateway-service}
+
+  main:
+    web-application-type: reactive
+
+  webflux:
+    cors:
+      allowed-origins: ${CORS_ALLOWED_ORIGINS:*}
+      allowed-methods: ${CORS_ALLOWED_METHODS:*}
+      allowed-headers: ${CORS_ALLOWED_HEADERS:*}
+      allow-credentials: ${CORS_ALLOW_CREDENTIALS:true}
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+
+  cloud:
+    gateway:
+      httpclient:
+        connect-timeout: ${GATEWAY_CONNECT_TIMEOUT:3000}
+        response-timeout: ${GATEWAY_RESPONSE_TIMEOUT:5s}
+
+      routes:
+        # ==========================
+        # AUTH SERVICE ROUTES
+        # ==========================
+        - id: auth-service
+          uri: lb://auth-service
+          predicates:
+            - Path=/api/v1/auth/**
+          filters:
+            - StripPrefix=2
+            - name: CircuitBreaker
+              args:
+                name: authServiceCB
+                fallbackUri: forward:/fallback/auth
+            - name: Retry
+              args:
+                retries: 3
+                methods: GET, POST
+                statuses: BAD_GATEWAY, GATEWAY_TIMEOUT, INTERNAL_SERVER_ERROR
+                backoff:
+                  firstBackoff: 100ms
+                  maxBackoff: 1s
+                  factor: 2
+
+        # ==========================
+        # USER SERVICE ROUTES
+        # ==========================
+        - id: user-service
+          uri: lb://user-service
+          predicates:
+            - Path=/api/v1/users/**
+          filters:
+            - StripPrefix=2
+            - name: CircuitBreaker
+              args:
+                name: userServiceCB
+                fallbackUri: forward:/fallback/user
+            - name: Retry
+              args:
+                retries: 2
+                methods: GET
+                statuses: BAD_GATEWAY, GATEWAY_TIMEOUT, INTERNAL_SERVER_ERROR
+                backoff:
+                  firstBackoff: 100ms
+                  maxBackoff: 800ms
+                  factor: 2
+
+        # ==========================
+        # NOTIFICATION SERVICE ROUTES
+        # ==========================
+        - id: notification-service
+          uri: lb://notification-service
+          predicates:
+            - Path=/api/v1/notifications/**
+          filters:
+            - StripPrefix=2
+            - name: CircuitBreaker
+              args:
+                name: notificationServiceCB
+                fallbackUri: forward:/fallback/notification
+            - name: Retry
+              args:
+                retries: 2
+                methods: POST
+                statuses: BAD_GATEWAY, GATEWAY_TIMEOUT
+                backoff:
+                  firstBackoff: 200ms
+                  maxBackoff: 1s
+                  factor: 2
+
+        # ==========================
+        # KYC SERVICE ROUTES
+        # ==========================
+        - id: kyc-service
+          uri: lb://kyc-service
+          predicates:
+            - Path=/api/v1/kyc/**
+          filters:
+            - StripPrefix=2
+            - name: CircuitBreaker
+              args:
+                name: kycServiceCB
+                fallbackUri: forward:/fallback/kyc
+            - name: Retry
+              args:
+                retries: 2
+                methods: GET, POST
+                statuses: BAD_GATEWAY, GATEWAY_TIMEOUT, INTERNAL_SERVER_ERROR
+                backoff:
+                  firstBackoff: 200ms
+                  maxBackoff: 1s
+                  factor: 2
+
+        # ==========================
+        # PAYMENT SERVICE ROUTES
+        # ==========================
+        - id: payment-service
+          uri: lb://payment-service
+          predicates:
+            - Path=/api/v1/payment/**
+          filters:
+            - StripPrefix=2
+            - name: CircuitBreaker
+              args:
+                name: paymentServiceCB
+                fallbackUri: forward:/fallback/payment
+            - name: Retry
+              args:
+                retries: 2
+                methods: GET, POST
+                statuses: BAD_GATEWAY, GATEWAY_TIMEOUT, INTERNAL_SERVER_ERROR
+                backoff:
+                  firstBackoff: 200ms
+                  maxBackoff: 1s
+                  factor: 2
+
+# ==========================
+# RESILIENCE4J CIRCUIT BREAKER & TIMELIMITER
+# ==========================
+resilience4j:
+  circuitbreaker:
+    instances:
+      authServiceCB:
+        failure-rate-threshold: ${AUTH_CB_FAILURE_RATE:50}
+        sliding-window-size: ${AUTH_CB_SLIDING_WINDOW:20}
+        minimum-number-of-calls: ${AUTH_CB_MIN_CALLS:10}
+        wait-duration-in-open-state: ${AUTH_CB_WAIT_DURATION:30s}
+      userServiceCB:
+        failure-rate-threshold: ${USER_CB_FAILURE_RATE:50}
+        sliding-window-size: ${USER_CB_SLIDING_WINDOW:20}
+        minimum-number-of-calls: ${USER_CB_MIN_CALLS:10}
+        wait-duration-in-open-state: ${USER_CB_WAIT_DURATION:30s}
+      kycServiceCB:
+        failure-rate-threshold: ${KYC_CB_FAILURE_RATE:40}
+        sliding-window-size: ${KYC_CB_SLIDING_WINDOW:20}
+        minimum-number-of-calls: ${KYC_CB_MIN_CALLS:10}
+        wait-duration-in-open-state: ${KYC_CB_WAIT_DURATION:45s}
+      notificationServiceCB:
+        failure-rate-threshold: ${NOTIFICATION_CB_FAILURE_RATE:60}
+        sliding-window-size: ${NOTIFICATION_CB_SLIDING_WINDOW:10}
+        minimum-number-of-calls: ${NOTIFICATION_CB_MIN_CALLS:5}
+        wait-duration-in-open-state: ${NOTIFICATION_CB_WAIT_DURATION:30s}
+      paymentServiceCB:
+        failure-rate-threshold: ${PAYMENT_CB_FAILURE_RATE:50}
+        sliding-window-size: ${PAYMENT_CB_SLIDING_WINDOW:20}
+        minimum-number-of-calls: ${PAYMENT_CB_MIN_CALLS:10}
+        wait-duration-in-open-state: ${PAYMENT_CB_WAIT_DURATION:30s}
+
+  timelimiter:
+    instances:
+      authServiceCB:
+        timeout-duration: ${AUTH_CB_TIMEOUT:6s}
+      userServiceCB:
+        timeout-duration: ${USER_CB_TIMEOUT:6s}
+      kycServiceCB:
+        timeout-duration: ${KYC_CB_TIMEOUT:6s}
+      notificationServiceCB:
+        timeout-duration: ${NOTIFICATION_CB_TIMEOUT:6s}
+      paymentServiceCB:
+        timeout-duration: ${PAYMENT_CB_TIMEOUT:30s}
+
+# ==========================
+# EUREKA CLIENT CONFIGURATION
+# ==========================
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_SERVER_URL:http://localhost:8761/eureka/}
+    register-with-eureka: ${EUREKA_REGISTER:true}
+    fetch-registry: ${EUREKA_FETCH_REGISTRY:true}
+  instance:
+    prefer-ip-address: ${EUREKA_PREFER_IP:true}
+    health-check-url-path: /actuator/health
+    metadata-map:
+      instanceId: ${spring.application.name}:${spring.application.instance_id:${random.value}}
+
+# ==========================
+# JWT CONFIGURATION
+# ==========================
+jwt:
+  secret: ${JWT_SECRET}
+  expiration-ms: ${JWT_EXPIRATION_MS:3600000}
+
+# ==========================
+# PUBLIC PATHS (JWT EXCLUDED)
+# ==========================
+gateway:
+  custom:
+    public-paths:
+      - /api/v1/auth/initiateLogin
+      - /api/v1/auth/verify-otp
+      - /api/v1/auth/validate
+      - /api/v1/auth/forgot-password
+      - /api/v1/auth/reset-password
+      - /api/v1/users/register
+      - /api/ping
+      - /actuator/health
+
+# ==========================
+# LOGGING CONFIGURATION
+# ==========================
+logging:
+  level:
+    root: ${LOG_LEVEL_ROOT:INFO}
+    com.gatepay.gatewayservice: ${LOG_LEVEL_GATEWAY:DEBUG}
+    org.springframework.security: ${LOG_LEVEL_SECURITY:DEBUG}
+    com.gatepay.gatewayservice.security.JwtAuthFilter: TRACE
+    io.github.resilience4j.circuitbreaker: ${LOG_LEVEL_RESILIENCE:DEBUG}
+
+# ==========================
+# ACTUATOR SETTINGS
+# ==========================
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info, prometheus, metrics
+  endpoint:
+    health:
+      show-details: ${MANAGEMENT_HEALTH_SHOW_DETAILS:always}
+  metrics:
+    export:
+      prometheus:
+        enabled: true

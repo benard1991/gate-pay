@@ -1,0 +1,49 @@
+spring:
+  application:
+    name: auth-service
+
+rabbitmq:
+  host: ${RABBITMQ_HOST:127.0.0.1}
+  port: ${RABBITMQ_PORT:5672}
+  username: ${RABBITMQ_USERNAME}
+  password: ${RABBITMQ_PASSWORD}
+
+logging:
+  level:
+    root: INFO
+    com.gatepay: DEBUG
+    org.springframework: INFO
+
+server:
+  port: ${SERVER_PORT:8081}
+  error:
+    include-stacktrace: NEVER
+    include-message: ALWAYS
+
+transaction:
+  deposit-limit: ${DEPOSIT_LIMIT:10000000}
+  withdrawal-limit: ${WITHDRAWAL_LIMIT:5000000}
+  rapidTransactionThreshold: ${RAPID_TX_THRESHOLD:5}
+
+jwt:
+  secret: ${JWT_SECRET}
+  access-token-expiration-ms: ${JWT_ACCESS_EXP:1800000}
+  refresh-token-expiration-ms: ${JWT_REFRESH_EXP:86400000}
+
+# Eureka client configuration
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
+    register-with-eureka: true
+    fetch-registry: true
+  instance:
+    prefer-ip-address: true
+
+# Feign client configuration
+feign:
+  client:
+    config:
+      default:
+        connectTimeout: 5000
+        readTimeout: 5000

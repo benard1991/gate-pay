@@ -1,0 +1,185 @@
+version: "3.9"
+networks:
+  gatepay-network:
+    driver: bridge
+
+services:
+
+  # ==============================
+  # DISCOVERY SERVICE
+  # ==============================
+  discovery-service:
+    build:
+      context: .
+      dockerfile: ./discovery-service/Dockerfile
+    env_file:
+      - ./discovery-service/.env
+    ports:
+      - "8761:8761"
+    networks:
+      - gatepay-network
+
+  # ==============================
+  # GATEWAY SERVICE
+  # ==============================
+  gateway-service:
+    build:
+      context: .
+      dockerfile: ./gateway-service/Dockerfile
+    env_file:
+      - ./gateway-service/.env
+    ports:
+      - "8080:8080"
+    depends_on:
+      - discovery-service
+      - redis
+    networks:
+      - gatepay-network
+
+  # ==============================
+  # USER SERVICE
+  # ==============================
+  user-service:
+    build:
+      context: .
+      dockerfile: ./user-service/Dockerfile
+    env_file:
+      - ./user-service/.env
+    ports:
+      - "8082:8082"
+    depends_on:
+      - discovery-service
+      - mysql_user_service
+    networks:
+      - gatepay-network
+
+  # ==============================
+  # AUTH SERVICE
+  # ==============================
+  auth-service:
+    build:
+      context: .
+      dockerfile: ./auth-service/Dockerfile
+    env_file:
+      - ./auth-service/.env
+    ports:
+      - "8081:8081"
+    depends_on:
+      - discovery-service
+      - rabbitmq
+      - mysql_user_service
+    networks:
+      - gatepay-network
+
+  # ==============================
+  # KYC SERVICE
+  # ==============================
+  kyc-service:
+    build:
+      context: .
+      dockerfile: ./kyc-service/Dockerfile
+    env_file:
+      - ./kyc-service/.env
+    ports:
+      - "8085:8085"
+    depends_on:
+      - discovery-service
+      - mysql_kyc_service
+    networks:
+      - gatepay-network
+
+  # ==============================
+  # PAYMENT SERVICE
+  # ==============================
+  payment-service:
+    build:
+      context: .
+      dockerfile: ./payment-service/Dockerfile
+    env_file:
+      - ./payment-service/.env
+    ports:
+      - "8087:8087"
+    depends_on:
+      - discovery-service
+      - mysql_payment_service
+    networks:
+      - gatepay-network
+
+  # ==============================
+  # NOTIFICATION SERVICE
+  # ==============================
+  notification-service:
+    build:
+      context: .
+      dockerfile: ./notification-service/Dockerfile
+    env_file:
+      - ./notification-service/.env
+    ports:
+      - "8084:8084"
+    depends_on:
+      - discovery-service
+      - rabbitmq
+    networks:
+      - gatepay-network
+
+  # ==============================
+  # REDIS (for caching)
+  # ==============================
+  redis:
+    image: redis:7
+    container_name: gatepay-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - gatepay-network
+
+  # ==============================
+  # RABBITMQ (for async messaging)
+  # ==============================
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: gatepay-rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    networks:
+      - gatepay-network
+
+  # ==============================
+  # MYSQL SERVICES
+  # ==============================
+  mysql_user_service:
+    image: mysql:8
+    container_name: gatepay-mysql-user
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: gatepay_user_service
+    ports:
+      - "3307:3306"
+    networks:
+      - gatepay-network
+    command: --default-authentication-plugin=mysql_native_password
+
+  mysql_kyc_service:
+    image: mysql:8
+    container_name: gatepay-mysql-kyc
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: gatepay_kyc_service
+    ports:
+      - "3308:3306"
+    networks:
+      - gatepay-network
+    command: --default-authentication-plugin=mysql_native_password
+
+  mysql_payment_service:
+    image: mysql:8
+    container_name: gatepay-mysql-payment
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: gatepay_payment_service
+    ports:
+      - "3309:3306"
+    networks:
+      - gatepay-network
+    command: --default-authentication-plugin=mysql_native_password

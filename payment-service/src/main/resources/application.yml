@@ -1,0 +1,75 @@
+spring:
+  application:
+    name: payment-service
+
+  datasource:
+    url: ${DATASOURCE_URL}
+    username: ${DATASOURCE_USERNAME}
+    password: ${DATASOURCE_PASSWORD}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: ${SPRING_DATASOURCE_MAX_POOL_SIZE:10}
+      minimum-idle: ${SPRING_DATASOURCE_MIN_IDLE:2}
+      idle-timeout: ${SPRING_DATASOURCE_IDLE_TIMEOUT:30000}
+      connection-timeout: ${SPRING_DATASOURCE_CONNECTION_TIMEOUT:20000}
+      pool-name: HikariCP
+
+  jpa:
+    hibernate:
+      ddl-auto: ${SPRING_JPA_HIBERNATE_DDL_AUTO:update}   # For dev; use 'validate' or 'none' in prod
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQL8Dialect
+        format_sql: true
+        show_sql: false
+
+  flyway:
+    enabled: ${SPRING_FLYWAY_ENABLED:true}
+    baseline-on-migrate: ${SPRING_FLYWAY_BASELINE_ON_MIGRATE:true}
+    clean-on-validation-error: ${SPRING_FLYWAY_CLEAN_ON_VALIDATION_ERROR:false}
+    locations: classpath:db/migration
+
+logging:
+  level:
+    root: ${LOGGING_LEVEL_ROOT:INFO}
+    org.flywaydb: ${LOGGING_LEVEL_FLYWAY:DEBUG}
+    com.gatepay.userservice: ${LOGGING_LEVEL_PAYMENT_SERVICE:DEBUG}
+    org.springframework: ${LOGGING_LEVEL_SPRING:INFO}
+
+server:
+  port: ${SERVER_PORT:8087}
+  error:
+    include-stacktrace: NEVER
+    include-message: ALWAYS
+
+# Eureka client configuration
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_DEFAULT_ZONE:http://localhost:8761/eureka/}
+    register-with-eureka: ${EUREKA_REGISTER:true}
+    fetch-registry: ${EUREKA_FETCH_REGISTRY:true}
+    instance:
+      prefer-ip-address: ${EUREKA_PREFER_IP:true}
+
+# Feign client configuration
+feign:
+  client:
+    config:
+      default:
+        connectTimeout: ${FEIGN_CONNECT_TIMEOUT:5000}
+        readTimeout: ${FEIGN_READ_TIMEOUT:5000}
+
+# Paystack config
+paystack:
+  secret-key: ${PAYSTACK_SECRET_KEY}
+  public-key: ${PAYSTACK_PUBLIC_KEY}
+  base-url: ${PAYSTACK_BASE_URL}
+  default-currency: ${PAYSTACK_DEFAULT_CURRENCY:NGN}
+
+# Flutterwave config
+flutterwave:
+    secret-key: ${FLUTTERWAVE_SECRET_KEY}
+    public-key: ${FLUTTERWAVE_PUBLIC_KEY}
+    base-url: ${FLUTTERWAVE_BASE_URL}
+    encryption-key: ${FLUTTERWAVE_ENCRYPTION_KEY}

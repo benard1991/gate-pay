@@ -1,0 +1,45 @@
+server:
+  port: 8084
+  servlet:
+    context-path: /api/v1/notifications
+
+spring:
+  application:
+    name: notification-service
+
+  rabbitmq:
+    host:  127.0.0.1
+    port: 5672
+    username: guest
+    password: guest
+
+  mail:
+    host: smtp.mailtrap.io
+    port: 2525
+    username: dd228f7d1b78e5
+    password: 4e6ab3a560200b
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls.enable: true
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+    register-with-eureka: true
+    fetch-registry: true
+  instance:
+    prefer-ip-address: true
+
+feign:
+  client:
+    config:
+      default:
+        connectTimeout: 5000
+        readTimeout: 5000
+
+logging:
+  level:
+    com.yourcompany.notificationservice: INFO
