@@ -5,7 +5,6 @@
 
     <modelVersion>4.0.0</modelVersion>
 
-    <!-- Inherit parent -->
     <parent>
         <groupId>com.gatepay</groupId>
         <artifactId>gatepay</artifactId>
@@ -13,16 +12,13 @@
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <!-- Service Identification -->
-    <artifactId>user-service</artifactId>
+    <artifactId>payment-service</artifactId>
     <groupId>com.gatepay.paymentservice</groupId>
     <version>1.0-SNAPSHOT</version>
     <name>payment-service</name>
     <description>Payment Service microservice for GatePay</description>
 
-
     <dependencies>
-
         <!-- JPA -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -42,36 +38,33 @@
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
 
-        <!-- OpenFeign (already version-controlled by parent BOM) -->
+        <!-- OpenFeign -->
         <dependency>
             <groupId>org.springframework.cloud</groupId>
             <artifactId>spring-cloud-starter-openfeign</artifactId>
         </dependency>
 
-        <!-- Flyway (version from parent BOM) -->
+        <!-- Flyway -->
         <dependency>
             <groupId>org.flywaydb</groupId>
             <artifactId>flyway-core</artifactId>
         </dependency>
-
         <dependency>
             <groupId>org.flywaydb</groupId>
             <artifactId>flyway-mysql</artifactId>
         </dependency>
 
-        <!-- Test dependencies -->
+        <!-- Testing -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
-
         <dependency>
             <groupId>org.mockito</groupId>
             <artifactId>mockito-core</artifactId>
             <scope>test</scope>
         </dependency>
-
         <dependency>
             <groupId>org.mockito</groupId>
             <artifactId>mockito-junit-jupiter</artifactId>
@@ -90,8 +83,6 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-redis</artifactId>
         </dependency>
-
-        <!-- Spring Cache support -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-cache</artifactId>
@@ -102,27 +93,34 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-amqp</artifactId>
         </dependency>
+
+        <!-- Hibernate Types -->
         <dependency>
             <groupId>com.vladmihalcea</groupId>
             <artifactId>hibernate-types-60</artifactId>
             <version>2.21.1</version>
             <scope>compile</scope>
         </dependency>
-        <!-- For HTTP requests -->
+
+        <!-- WebFlux for HTTP requests -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webflux</artifactId>
         </dependency>
-
-
     </dependencies>
 
     <build>
         <plugins>
-            <!-- Spring Boot Plugin (compiler inherited from parent) -->
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>repackage</goal>
+                        </goals>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>

@@ -97,15 +97,30 @@ cp notification-service/.env.example notification-service/.env
 cp gateway-service/.env.example gateway-service/.env
 ```
 
-### 3. Run with Docker Compose
+### 3. Enable BuildKit (required for faster builds and dependency caching)
 
 ```bash
-docker-compose up --build
+export DOCKER_BUILDKIT=1
+export COMPOSE_DOCKER_CLI_BUILD=1
 ```
 
-Services will start in order. Discovery service comes up first, then all other services register with Eureka.
+> **Why?** BuildKit enables layer caching for Maven dependencies. Without it, all 8 services re-download their dependencies from scratch on every build, which can take 20–30 minutes. With BuildKit, dependencies are cached and reused — subsequent builds take a fraction of the time.
 
-### 4. Access the services
+### 4. Build and start all services
+
+```bash
+docker compose up --build
+```
+
+To run in the background:
+
+```bash
+docker compose up --build -d
+```
+
+Services start in dependency order. The discovery service comes up first, then all other services register with Eureka.
+
+### 5. Access the services
 
 | Service | URL |
 |---|---|
@@ -116,6 +131,32 @@ Services will start in order. Discovery service comes up first, then all other s
 | Payment Service | http://localhost:8083 |
 | Notification Service | http://localhost:8084 |
 | KYC Service | http://localhost:8085 |
+| RabbitMQ Dashboard | http://localhost:15672 |
+
+---
+
+## Useful Commands
+
+### Stop all services
+```bash
+docker compose down
+```
+
+### Stop and wipe all databases
+```bash
+docker compose down -v
+```
+
+### Rebuild a single service
+```bash
+docker compose build user-service
+docker compose up -d user-service
+```
+
+### View logs for a specific service
+```bash
+docker compose logs -f auth-service
+```
 
 ---
 
