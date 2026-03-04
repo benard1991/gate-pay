@@ -1,5 +1,6 @@
 package com.gatepay.authservice.exception;
 
+import feign.FeignException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -47,6 +48,33 @@ public class GlobalExceptionHandler {
         );
     }
 
+    // ============================ FEIGN EXCEPTIONS ==============================
+    @ExceptionHandler(FeignException.NotFound.class)
+    public ResponseEntity<ErrorResponse> handleFeignNotFound(
+            FeignException.NotFound ex, HttpServletRequest request) {
+
+        log.warn("Downstream service returned 404: {}", ex.getMessage());
+
+        return buildError(
+                ErrorCode.USER_NOT_FOUND,
+                ErrorCode.USER_NOT_FOUND.getMessage(),
+                request.getRequestURI()
+        );
+    }
+
+    @ExceptionHandler(FeignException.class)
+    public ResponseEntity<ErrorResponse> handleFeignException(
+            FeignException ex, HttpServletRequest request) {
+
+        log.error("Downstream service error: status={}", ex.status());
+
+        return buildError(
+                ErrorCode.USER_SERVICE_UNAVAILABLE,
+                ErrorCode.USER_SERVICE_UNAVAILABLE.getMessage(),
+                request.getRequestURI()
+        );
+    }
+
     // ============================ BAD CREDENTIALS ===============================
     @ExceptionHandler(BadCredentialsException.class)
     public ResponseEntity<ErrorResponse> handleBadCredentials(
@@ -74,7 +102,6 @@ public class GlobalExceptionHandler {
 
         log.warn("Validation failed: {}", errors);
 
-        // Return the map of field → error message
         return buildError(
                 ErrorCode.VALIDATION_ERROR,
                 errors,

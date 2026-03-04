@@ -67,12 +67,22 @@ services:
         condition: service_healthy
       mysql_user_service:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     networks:
       - gatepay-network
     restart: on-failure
     mem_limit: 512m
     environment:
       - JAVA_OPTS=-Xms64m -Xmx256m
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8082/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
 
   # ==============================
   # AUTH SERVICE
@@ -90,7 +100,7 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
-      mysql_user_service:
+      user-service:
         condition: service_healthy
     networks:
       - gatepay-network
