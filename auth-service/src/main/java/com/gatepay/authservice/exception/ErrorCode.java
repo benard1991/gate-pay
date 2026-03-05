@@ -4,15 +4,20 @@ import org.springframework.http.HttpStatus;
 
 public enum ErrorCode {
 
-    USER_NOT_FOUND("AUTH_001", "User not found", HttpStatus.NOT_FOUND),
-    INVALID_CREDENTIALS("AUTH_002", "Invalid credentials", HttpStatus.UNAUTHORIZED),
-    ACCOUNT_DISABLED("AUTH_003", "User account is disabled", HttpStatus.FORBIDDEN),
-    VALIDATION_ERROR("AUTH_004", "Validation failed", HttpStatus.BAD_REQUEST),
-    BAD_CREDENTIALS("AUTH_005", "Invalid username or password", HttpStatus.UNAUTHORIZED),
-    INTERNAL_ERROR("AUTH_999", "An unexpected error occurred", HttpStatus.INTERNAL_SERVER_ERROR),
-    USER_SERVICE_UNAVAILABLE("AUTH_006", "User-Service is currently unavailable", HttpStatus.SERVICE_UNAVAILABLE),
-    INVALID_OTP("AUTH_007", "Invalid OTP", HttpStatus.BAD_REQUEST); // last constant ends with semicolon
+    // General
+    METHOD_NOT_ALLOWED("GEN_405", "HTTP method not supported for this endpoint", HttpStatus.METHOD_NOT_ALLOWED),
+    INTERNAL_ERROR("GEN_500", "An unexpected error occurred", HttpStatus.INTERNAL_SERVER_ERROR),
+    VALIDATION_ERROR("GEN_400", "Validation failed", HttpStatus.BAD_REQUEST),
 
+    // User
+    USER_NOT_FOUND("USR_001", "User not found", HttpStatus.NOT_FOUND),
+    ACCOUNT_DISABLED("USR_003", "User account is disabled", HttpStatus.FORBIDDEN),
+
+    // Auth
+    INVALID_CREDENTIALS("AUTH_001", "Invalid credentials", HttpStatus.UNAUTHORIZED),
+    BAD_CREDENTIALS("AUTH_002", "Invalid username or password", HttpStatus.UNAUTHORIZED),
+    INVALID_OTP("AUTH_003", "Invalid OTP", HttpStatus.BAD_REQUEST),
+    USER_SERVICE_UNAVAILABLE("AUTH_004", "User service is currently unavailable", HttpStatus.SERVICE_UNAVAILABLE);
 
     private final String code;
     private final String message;

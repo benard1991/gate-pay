@@ -3,23 +3,30 @@ package com.gatepay.kycservice.exception;
 import org.springframework.http.HttpStatus;
 
 public enum ErrorCode {
-    METHOD_NOT_ALLOWED("kyc_405", "HTTP method not supported for this endpoint", HttpStatus.METHOD_NOT_ALLOWED),
-    USER_NOT_FOUND("USER_001", "User not found", HttpStatus.NOT_FOUND),
-    INVALID_CREDENTIALS("SER_002", "Invalid credentials", HttpStatus.UNAUTHORIZED),
-    USER_ALREADY_EXISTS("USER_409", "User with this email already exists", HttpStatus.CONFLICT),
-    ACCOUNT_DISABLED("USER__003", "User account is disabled", HttpStatus.FORBIDDEN),
-    VALIDATION_ERROR("USER_004", "Validation failed", HttpStatus.BAD_REQUEST),
-    BAD_CREDENTIALS("USER_005", "Invalid username or password", HttpStatus.UNAUTHORIZED),
-    INTERNAL_ERROR("USER__999", "An unexpected error occurred", HttpStatus.INTERNAL_SERVER_ERROR),
-    INVALID_FILE("KYC_007", "File size exceeds the maximum allowed size of 5 MB", HttpStatus.BAD_REQUEST),
-    KYC_WARNING("KYC_094", "You already have a pending KYC request", HttpStatus.CONFLICT),
-    INVALID_PASSWORD("AUTH_007", "Invalid password provided", HttpStatus.BAD_REQUEST),
-    Email_REQUIRED("AUTH_080", "Email cannot be empty", HttpStatus.BAD_REQUEST),
-    DUPLICATE_REQUEST("KYC_409", "Duplicate request detected. Please wait before retrying.", HttpStatus.CONFLICT),
-    AUDIT_FAILURE("AUTH_020", "Email cannot be empty", HttpStatus.BAD_REQUEST),
 
-    SERIALIZATION_ERROR("KYC_001", "Failed to serialize KYC data for audit trail", HttpStatus.INTERNAL_SERVER_ERROR),
-    USER_SERVICE_UNAVAILABLE("AUTH_006", "User-Service is currently unavailable",HttpStatus.SERVICE_UNAVAILABLE );
+    // General
+    METHOD_NOT_ALLOWED("GEN_405", "HTTP method not supported for this endpoint", HttpStatus.METHOD_NOT_ALLOWED),
+    INTERNAL_ERROR("GEN_500", "An unexpected error occurred", HttpStatus.INTERNAL_SERVER_ERROR),
+    VALIDATION_ERROR("GEN_400", "Validation failed", HttpStatus.BAD_REQUEST),
+
+    // User
+    USER_NOT_FOUND("USR_001", "User not found", HttpStatus.NOT_FOUND),
+    USER_ALREADY_EXISTS("USR_409", "User with this email already exists", HttpStatus.CONFLICT),
+    ACCOUNT_DISABLED("USR_003", "User account is disabled", HttpStatus.FORBIDDEN),
+
+    // Auth
+    INVALID_CREDENTIALS("AUTH_001", "Invalid credentials", HttpStatus.UNAUTHORIZED),
+    BAD_CREDENTIALS("AUTH_002", "Invalid username or password", HttpStatus.UNAUTHORIZED),
+    INVALID_PASSWORD("AUTH_003", "Invalid password provided", HttpStatus.BAD_REQUEST),
+    EMAIL_REQUIRED("AUTH_004", "Email cannot be empty", HttpStatus.BAD_REQUEST),
+    AUDIT_FAILURE("AUTH_005", "Audit trail recording failed", HttpStatus.BAD_REQUEST),
+    USER_SERVICE_UNAVAILABLE("AUTH_006", "User service is currently unavailable", HttpStatus.SERVICE_UNAVAILABLE),
+
+    // KYC
+    INVALID_FILE("KYC_001", "File size exceeds the maximum allowed size of 5 MB", HttpStatus.BAD_REQUEST),
+    SERIALIZATION_ERROR("KYC_002", "Failed to serialize KYC data for audit trail", HttpStatus.INTERNAL_SERVER_ERROR),
+    KYC_WARNING("KYC_003", "You already have a pending KYC request", HttpStatus.CONFLICT),
+    DUPLICATE_REQUEST("KYC_004", "Duplicate request detected. Please wait before retrying.", HttpStatus.CONFLICT);
 
     private final String code;
     private final String message;

@@ -42,10 +42,13 @@ public class GatewaySecurityConfig {
                         // Permit all public paths
                         .pathMatchers(gatewayProperties.getPublicPaths().toArray(new String[0])).permitAll()
                         // Admin endpoints
-                        .pathMatchers("/api/v1/admin/**").hasAuthority("ROLE_ADMIN")
+                        .pathMatchers("/api/v1/users/admin/**").hasAuthority("ROLE_ADMIN")
+                        .pathMatchers("/api/v1/kyc/admin/**").hasAuthority("ROLE_ADMIN")
+                        .pathMatchers("/api/v1/payments/admin/**").hasAuthority("ROLE_ADMIN")
                         // User endpoints
                         .pathMatchers("/api/v1/users/**").hasAuthority("ROLE_USER")
                         .pathMatchers("/api/v1/kyc/**").hasAuthority("ROLE_USER")
+                        .pathMatchers("/api/v1/payments/**").hasAuthority("ROLE_USER")
                         // All other endpoints require authentication
                         .anyExchange().authenticated()
                 )

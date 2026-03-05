@@ -2,6 +2,11 @@ spring:
   application:
     name: kyc-service
 
+  data:
+    redis:
+      host: ${SPRING_REDIS_HOST:localhost}
+      port: ${SPRING_REDIS_PORT:6379}
+
   datasource:
     url: ${DATASOURCE_URL}
     username: ${DATASOURCE_USERNAME}
@@ -13,10 +18,13 @@ spring:
       idle-timeout: ${SPRING_DATASOURCE_IDLE_TIMEOUT:30000}
       connection-timeout: ${SPRING_DATASOURCE_CONNECTION_TIMEOUT:20000}
       pool-name: HikariCP
+      connection-test-query: SELECT 1
+      keepalive-time: 30000
+      max-lifetime: 1800000
 
   jpa:
     hibernate:
-      ddl-auto: ${SPRING_JPA_HIBERNATE_DDL_AUTO:update}   # For dev; use 'validate' or 'none' in prod
+      ddl-auto: ${SPRING_JPA_HIBERNATE_DDL_AUTO:update}
     properties:
       hibernate:
         dialect: org.hibernate.dialect.MySQL8Dialect
@@ -42,7 +50,6 @@ server:
     include-stacktrace: NEVER
     include-message: ALWAYS
 
-# Eureka client configuration
 eureka:
   client:
     service-url:
@@ -52,7 +59,6 @@ eureka:
     instance:
       prefer-ip-address: ${EUREKA_PREFER_IP:true}
 
-# Feign client configuration
 feign:
   client:
     config:

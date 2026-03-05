@@ -25,7 +25,7 @@ spring:
     gateway:
       httpclient:
         connect-timeout: ${GATEWAY_CONNECT_TIMEOUT:3000}
-        response-timeout: ${GATEWAY_RESPONSE_TIMEOUT:5s}
+        response-timeout: ${GATEWAY_RESPONSE_TIMEOUT:30s}  # increased from 5s
 
       routes:
         # ==========================
@@ -126,7 +126,7 @@ spring:
         - id: payment-service
           uri: lb://payment-service
           predicates:
-            - Path=/api/v1/payment/**
+            - Path=/api/v1/payments/**  # fixed: was /api/v1/payment/**
           filters:
             - StripPrefix=2
             - name: CircuitBreaker
@@ -178,15 +178,15 @@ resilience4j:
   timelimiter:
     instances:
       authServiceCB:
-        timeout-duration: ${AUTH_CB_TIMEOUT:6s}
+        timeout-duration: ${AUTH_CB_TIMEOUT:25s}
       userServiceCB:
-        timeout-duration: ${USER_CB_TIMEOUT:6s}
+        timeout-duration: ${USER_CB_TIMEOUT:25s}
       kycServiceCB:
-        timeout-duration: ${KYC_CB_TIMEOUT:6s}
+        timeout-duration: ${KYC_CB_TIMEOUT:25s}
       notificationServiceCB:
-        timeout-duration: ${NOTIFICATION_CB_TIMEOUT:6s}
+        timeout-duration: ${NOTIFICATION_CB_TIMEOUT:25s}
       paymentServiceCB:
-        timeout-duration: ${PAYMENT_CB_TIMEOUT:30s}
+        timeout-duration: ${PAYMENT_CB_TIMEOUT:25s}
 
 # ==========================
 # EUREKA CLIENT CONFIGURATION

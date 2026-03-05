@@ -1,70 +1,80 @@
 # GatePay — Microservices Payment Gateway
 
-A production-ready microservices payment gateway built with Java, Spring Boot, and Spring Cloud. GatePay handles user management, authentication, payments, KYC verification, notifications, and wallet operations across 8 independently deployable services.
+GatePay is a payment gateway built on a microservices architecture using Java 17, Spring Boot 3, and Spring Cloud. It covers the full lifecycle of a payment platform — user onboarding, authentication, KYC verification, payments, wallet management, and async notifications — across 8 independently deployable services.
 
 ---
 
-## Architecture Overview
+## Architecture
 
-```
-                        ┌─────────────────┐
-                        │  API Gateway     │
-                        │  (Port 8080)     │
-                        │  Rate Limiting   │
-                        │  JWT Auth Filter │
-                        │  Circuit Breaker │
-                        └────────┬────────┘
-                                 │
-          ┌──────────────────────┼──────────────────────┐
-          │                      │                      │
-   ┌──────▼──────┐      ┌───────▼──────┐      ┌───────▼──────┐
-   │ User Service │      │ Auth Service │      │Payment Service│
-   │  (Port 8082) │      │  (Port 8081) │      │  (Port 8083) │
-   └─────────────┘      └─────────────┘      └──────────────┘
-          │                      │                      │
-   ┌──────▼──────┐      ┌───────▼──────┐      ┌───────▼──────┐
-   │  KYC Service │      │Notification  │      │  Discovery   │
-   │  (Port 8085) │      │  Service     │      │  Service     │
-   └─────────────┘      │  (Port 8084) │      │  (Port 8761) │
-                        └─────────────┘      └──────────────┘
-                                 │
-                        ┌────────▼────────┐
-                        │    RabbitMQ      │
-                        │  Async Messaging │
-                        └─────────────────┘
+```mermaid
+flowchart TB
+    DS["Discovery Service\n(Port 8761)\nEureka Registry"]
+
+    GW["API Gateway\n(Port 9090)\nJWT Validation · Rate Limiting · Circuit Breaker"]
+
+    AUTH["Auth Service\n(Port 8081)\nLogin · OTP · Forgot & Reset Password"]
+    USER["User Service\n(Port 8082)\nRegistration · Profiles · Roles"]
+    PAY["Payment Service\n(Port 8087)\nPaystack · Flutterwave"]
+    WALLET["Wallet Service\n(Port 8086)\nBalances · Deposits · Withdrawals"]
+    KYC["KYC Service\n(Port 8085)\nDocument Upload · Admin Approval"]
+    NOTIFY["Notification Service\n(Port 8084)\nAsync Email Dispatch"]
+
+    MQ[("RabbitMQ\nAsync Messaging")]
+
+    DS -.->|all services register| GW
+
+    GW --> AUTH
+    GW --> USER
+    GW --> PAY
+    GW --> WALLET
+    GW --> KYC
+
+    AUTH <-->|Feign| USER
+    KYC <-->|Feign| USER
+    PAY -->|Feign| USER
+    PAY -->|Feign| KYC
+
+    AUTH -->|"OTP · login · forgot/reset password"| MQ
+    USER -->|registration| MQ
+    KYC -->|"registration · status updates"| MQ
+
+    MQ --> NOTIFY
 ```
 
 ---
 
 ## Services
 
-| Service | Port | Description |
+| Service | Port | Responsibility |
 |---|---|---|
-| `discovery-service` | 8761 | Eureka service registry — all services register here |
-| `gateway-service` | 8080 | API Gateway — routing, rate limiting, JWT validation |
-| `auth-service` | 8081 | Authentication — login, JWT issuance, OTP, password reset |
-| `user-service` | 8082 | User management — registration, profiles, roles |
-| `payment-service` | 8083 | Payments — Paystack & Flutterwave integration, wallet ops |
-| `notification-service` | 8084 | Async notifications — email via RabbitMQ |
-| `kyc-service` | 8085 | KYC verification — document upload via Cloudinary |
+| `discovery-service` | 8761 | Eureka registry — every service registers here on startup |
+| `gateway-service` | 9090 | Single entry point — routing, JWT validation, rate limiting, and circuit breaking |
+| `auth-service` | 8081 | Issues and validates JWTs, handles OTP flows, login, and password reset |
+| `user-service` | 8082 | User registration, profile management, and role assignment |
+| `payment-service` | 8087 | Processes payments via Paystack and Flutterwave with automatic failover |
+| `wallet-service` | 8086 | Manages user wallets — balances, deposits, and withdrawals |
+| `kyc-service` | 8085 | Document uploads via Cloudinary and admin KYC approval workflows |
+| `notification-service` | 8084 | Consumes RabbitMQ events and dispatches transactional emails |
 
 ---
 
 ## Tech Stack
 
-- **Language:** Java 17
-- **Framework:** Spring Boot 3, Spring Cloud
-- **Service Discovery:** Eureka (Netflix)
-- **API Gateway:** Spring Cloud Gateway
-- **Messaging:** RabbitMQ (async events between services)
-- **Caching:** Redis
-- **Databases:** MySQL (per service — isolated DBs)
-- **Migrations:** Flyway
-- **Auth:** JWT (access + refresh tokens)
-- **Resilience:** Circuit Breaker (Resilience4j), Feign clients with fallbacks
-- **Payment Providers:** Paystack, Flutterwave
-- **File Storage:** Cloudinary (KYC documents)
-- **Containerization:** Docker, Docker Compose
+| Category | Technology |
+|---|---|
+| Language | Java 17 |
+| Framework | Spring Boot 3, Spring Cloud |
+| Service Discovery | Eureka (Netflix) |
+| API Gateway | Spring Cloud Gateway |
+| Messaging | RabbitMQ |
+| Caching | Redis |
+| Database | MySQL (isolated DB per service) |
+| Migrations | Flyway |
+| Authentication | JWT — access and refresh tokens |
+| Resilience | Resilience4j — Circuit Breaker, Feign fallbacks |
+| Payment Providers | Paystack, Flutterwave |
+| File Storage | Cloudinary |
+| Containerization | Docker, Docker Compose |
 
 ---
 
@@ -72,7 +82,7 @@ A production-ready microservices payment gateway built with Java, Spring Boot, a
 
 ### Prerequisites
 
-- Docker & Docker Compose
+- Docker and Docker Compose
 - Java 17+
 - Maven 3.9+
 
@@ -83,28 +93,29 @@ git clone https://github.com/benard1991/gate-pay.git
 cd gate-pay
 ```
 
-### 2. Set up environment variables
+### 2. Configure environment variables
 
-Each service has a `.env.example` file. Copy and fill in your values:
+Each service ships with a `.env.example`. Copy and fill in your credentials:
 
 ```bash
 cp .env.example .env
 cp auth-service/.env.example auth-service/.env
 cp user-service/.env.example user-service/.env
 cp payment-service/.env.example payment-service/.env
+cp wallet-service/.env.example wallet-service/.env
 cp kyc-service/.env.example kyc-service/.env
 cp notification-service/.env.example notification-service/.env
 cp gateway-service/.env.example gateway-service/.env
 ```
 
-### 3. Enable BuildKit (required for faster builds and dependency caching)
+### 3. Enable Docker BuildKit
 
 ```bash
 export DOCKER_BUILDKIT=1
 export COMPOSE_DOCKER_CLI_BUILD=1
 ```
 
-> **Why?** BuildKit enables layer caching for Maven dependencies. Without it, all 8 services re-download their dependencies from scratch on every build, which can take 20–30 minutes. With BuildKit, dependencies are cached and reused — subsequent builds take a fraction of the time.
+BuildKit caches Maven dependencies between builds. Without it, all services re-download their dependencies on every build — which can take 20–30 minutes. With it, subsequent builds are significantly faster.
 
 ### 4. Build and start all services
 
@@ -118,79 +129,67 @@ To run in the background:
 docker compose up --build -d
 ```
 
-Services start in dependency order. The discovery service comes up first, then all other services register with Eureka.
+The discovery service starts first. All other services register with Eureka before accepting traffic.
 
-### 5. Access the services
+### 5. Service URLs
 
 | Service | URL |
 |---|---|
 | Eureka Dashboard | http://localhost:8761 |
-| API Gateway | http://localhost:8080 |
+| API Gateway | http://localhost:9090 |
 | Auth Service | http://localhost:8081 |
 | User Service | http://localhost:8082 |
-| Payment Service | http://localhost:8083 |
-| Notification Service | http://localhost:8084 |
+| Payment Service | http://localhost:8087 |
+| Wallet Service | http://localhost:8086 |
 | KYC Service | http://localhost:8085 |
+| Notification Service | http://localhost:8084 |
 | RabbitMQ Dashboard | http://localhost:15672 |
 
 ---
 
 ## Useful Commands
 
-### Stop all services
 ```bash
+# Stop all services
 docker compose down
-```
 
-### Stop and wipe all databases
-```bash
+# Stop and remove all data volumes
 docker compose down -v
-```
 
-### Rebuild a single service
-```bash
-docker compose build user-service
-docker compose up -d user-service
-```
+# Rebuild and restart a single service
+docker compose build user-service && docker compose up -d user-service
 
-### View logs for a specific service
-```bash
+# Tail logs for a specific service
 docker compose logs -f auth-service
 ```
 
 ---
 
-## Key Features
+## How It Works
 
-### Authentication & Security
-- JWT-based authentication with access and refresh tokens
-- OTP verification for login and password reset
-- Inter-service authentication via JWT propagation through the gateway
+### Authentication
+
+All requests hit the API Gateway first. The gateway validates the JWT before forwarding to any downstream service. Auth-service handles token issuance, OTP generation, and password reset flows. Inter-service calls carry the JWT through Feign clients so authentication context is preserved end-to-end.
 
 ### Payments
-- Paystack and Flutterwave integration with automatic failover via Circuit Breaker
-- Wallet management with deposit and withdrawal limits
-- Idempotent payment processing to prevent duplicate transactions
-- Full audit trail for every transaction
 
-### KYC Verification
-- Document upload and storage via Cloudinary
-- Admin approval workflow
-- Redis-backed idempotency checks
+Payment-service integrates with both Paystack and Flutterwave. If one provider fails, Resilience4j's circuit breaker trips and the request is handled gracefully rather than timing out. All transactions are idempotent — duplicate requests are detected and rejected. Every payment produces a full audit trail.
+
+### Wallet
+
+Wallet-service runs independently of payment-service. It manages per-user balances and enforces deposit and withdrawal limits.
+
+### KYC
+
+Users upload identity documents through the KYC service, which stores them via Cloudinary. Admins review and approve or reject submissions through a dedicated workflow. Redis is used to enforce idempotency on document submissions.
 
 ### Notifications
-- Fully async email notifications via RabbitMQ
-- Services publish events; notification service consumes and dispatches
-- No tight coupling between services
 
-### Resilience & Circuit Breaker
-- **Circuit Breaker implemented at the API Gateway level** using Spring Cloud Gateway + Resilience4j
-- All incoming requests pass through the gateway — if a downstream service is unavailable, the circuit opens and a fallback response is returned immediately
-- Prevents cascading failures by stopping traffic to unhealthy service instances
-- Circuit Breaker states: `CLOSED` (normal) → `OPEN` (failing, fallback activated) → `HALF_OPEN` (testing recovery)
-- **Fallback controller** in the gateway returns a clean error response instead of a timeout or 500 error
-- Payment provider resilience: Paystack and Flutterwave calls are protected — if one provider fails, the error is handled gracefully
-- Rate limiting at the gateway level via Spring Cloud Gateway filters
+No service sends emails directly. Auth, User, and KYC publish events to RabbitMQ — covering registration, login, OTP, password reset, and KYC status changes. The notification service consumes those events and handles dispatch. This keeps services decoupled and makes it straightforward to extend the notification layer without touching upstream services.
+
+### Resilience
+
+The circuit breaker lives at the gateway level. When a downstream service becomes unhealthy, the circuit opens and a fallback response is returned immediately — preventing cascading failures across the system. The circuit moves through three states: `CLOSED` under normal operation, `OPEN` when the failure threshold is breached, and `HALF_OPEN` when testing whether the service has recovered.
 
 ---
 
@@ -199,22 +198,23 @@ docker compose logs -f auth-service
 ```
 gate-pay/
 ├── docker-compose.yml
-├── pom.xml                    # Parent POM
-├── .env.example               # Root environment template
-├── discovery-service/         # Eureka Server
-├── gateway-service/           # API Gateway + JWT filter
-├── auth-service/              # Auth + OTP + JWT
-├── user-service/              # User registration + profiles
-├── payment-service/           # Payments + Wallet
-├── kyc-service/               # KYC document verification
-└── notification-service/      # Async email notifications
+├── pom.xml                      # Parent POM
+├── .env.example
+├── discovery-service/
+├── gateway-service/
+├── auth-service/
+├── user-service/
+├── payment-service/
+├── wallet-service/
+├── kyc-service/
+└── notification-service/
 ```
 
 ---
 
 ## Environment Variables
 
-Each service uses its own `.env` file. See the `.env.example` in each service directory for the full list of required variables. Never commit `.env` files — they are git-ignored.
+Each service reads from its own `.env` file. Refer to the `.env.example` in each service directory for the required variables. Never commit `.env` files — they are git-ignored by default.
 
 ---
 
