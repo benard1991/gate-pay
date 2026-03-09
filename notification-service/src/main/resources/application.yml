@@ -79,3 +79,16 @@ management:
         include: health, info, prometheus
   server:
     port: ${USER_SERVICE_PORT:8082}  # same as main server port
+
+  tracing:
+    sampling:
+      probability: 1.0
+  zipkin:
+    tracing:
+      endpoint: http://zipkin:9411/api/v2/spans
+
+  springdoc:
+    api-docs:
+      path: /api-docs
+    swagger-ui:
+      path: /swagger-ui.html

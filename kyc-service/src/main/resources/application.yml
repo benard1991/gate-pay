@@ -4,8 +4,14 @@ spring:
 
   data:
     redis:
-      host: ${SPRING_REDIS_HOST:localhost}
+      host: ${SPRING_REDIS_HOST:redis}
       port: ${SPRING_REDIS_PORT:6379}
+
+  rabbitmq:
+    host: ${RABBITMQ_HOST:rabbitmq}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
 
   datasource:
     url: ${DATASOURCE_URL}
@@ -56,8 +62,8 @@ eureka:
       defaultZone: ${EUREKA_DEFAULT_ZONE:http://localhost:8761/eureka/}
     register-with-eureka: ${EUREKA_REGISTER:true}
     fetch-registry: ${EUREKA_FETCH_REGISTRY:true}
-    instance:
-      prefer-ip-address: ${EUREKA_PREFER_IP:true}
+  instance:
+    prefer-ip-address: ${EUREKA_PREFER_IP:true}
 
 feign:
   client:
@@ -67,10 +73,24 @@ feign:
         readTimeout: ${FEIGN_READ_TIMEOUT:8000}
 
 cloudinary:
-  cloud-name: ${CLOUDINARY_CLOUD_NAME:dm4dc4nbi}
-  api-key: ${CLOUDINARY_API_KEY:746957422131865}
-  api-secret: ${CLOUDINARY_API_SECRET:P1Shpim6BwUtinLKDndtKFUZ8Sg}
+  cloud-name: ${CLOUDINARY_CLOUD_NAME}
+  api-key: ${CLOUDINARY_API_KEY}
+  api-secret: ${CLOUDINARY_API_SECRET}
 
 kyc:
   idempotency:
     ttl-minutes: ${KYC_IDEMPOTENCY_TTL_MINUTES:5}
+
+management:
+  tracing:
+    sampling:
+      probability: 1.0
+  zipkin:
+    tracing:
+      endpoint: http://zipkin:9411/api/v2/spans
+
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui.html

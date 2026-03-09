@@ -74,6 +74,8 @@ flowchart TB
 | Resilience | Resilience4j — Circuit Breaker, Feign fallbacks |
 | Payment Providers | Paystack, Flutterwave |
 | File Storage | Cloudinary |
+| API Documentation | Swagger / OpenAPI 3 |
+| Distributed Tracing | Zipkin |
 | Containerization | Docker, Docker Compose |
 
 ---
@@ -144,6 +146,50 @@ The discovery service starts first. All other services register with Eureka befo
 | KYC Service | http://localhost:8085 |
 | Notification Service | http://localhost:8084 |
 | RabbitMQ Dashboard | http://localhost:15672 |
+| Zipkin Tracing UI | http://localhost:9411 |
+
+---
+
+## API Documentation (Swagger)
+
+Each service exposes its own interactive API documentation via Swagger UI. All endpoints can be explored and tested directly from the browser — no Postman required.
+
+| Service | Swagger UI | OpenAPI JSON |
+|---|---|---|
+| Auth Service | http://localhost:8081/swagger-ui.html | http://localhost:8081/api-docs |
+| User Service | http://localhost:8082/swagger-ui.html | http://localhost:8082/api-docs |
+| Payment Service | http://localhost:8087/swagger-ui.html | http://localhost:8087/api-docs |
+| Wallet Service | http://localhost:8086/swagger-ui.html | http://localhost:8086/api-docs |
+| KYC Service | http://localhost:8085/swagger-ui.html | http://localhost:8085/api-docs |
+| Notification Service | http://localhost:8084/swagger-ui.html | http://localhost:8084/api-docs |
+
+> **Note:** The API Gateway (port 9090) handles routing and JWT validation. To test authenticated endpoints via Swagger, first call the login endpoint on auth-service to obtain a JWT, then click **Authorize** in the Swagger UI and paste the token.
+
+---
+
+## Distributed Tracing (Zipkin)
+
+GatePay uses [Zipkin](https://zipkin.io) for distributed tracing. Every request that flows through the system — from the API Gateway through to downstream services — is automatically traced and recorded.
+
+**Zipkin UI:** http://localhost:9411
+
+### How to use it
+
+1. Start all services with `docker compose up -d`
+2. Make any API call through the gateway (e.g. login, register, initiate payment)
+3. Open http://localhost:9411 in your browser
+4. Click **Run Query** to see the latest traces
+5. Click any trace to see the full request journey across services — including which service was called, in what order, and how long each hop took
+
+### What you can trace
+
+- End-to-end request flows across multiple services
+- Latency breakdown per service
+- Failed spans and error details
+- Inter-service Feign client calls
+- RabbitMQ message publishing latency
+
+Zipkin sampling is set to **100%** in development (`probability: 1.0`) so every request is captured.
 
 ---
 
@@ -161,6 +207,9 @@ docker compose build user-service && docker compose up -d user-service
 
 # Tail logs for a specific service
 docker compose logs -f auth-service
+
+# Check health status of all services
+docker compose ps
 ```
 
 ---

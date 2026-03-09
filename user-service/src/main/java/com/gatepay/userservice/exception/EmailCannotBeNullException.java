@@ -3,10 +3,10 @@ package com.gatepay.userservice.exception;
 public class EmailCannotBeNullException  extends UserServiceException{
 
     public EmailCannotBeNullException() {
-        super(ErrorCode.Email_REQUIRED);
+        super(ErrorCode.EMAIL_REQUIRED);
     }
 
     public EmailCannotBeNullException(String customMessage) {
-        super(ErrorCode.Email_REQUIRED, customMessage);
+        super(ErrorCode.EMAIL_REQUIRED, customMessage);
     }
 }

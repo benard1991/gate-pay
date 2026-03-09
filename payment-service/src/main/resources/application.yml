@@ -2,6 +2,17 @@ spring:
   application:
     name: payment-service
 
+  data:
+    redis:
+      host: ${REDIS_HOST:redis}
+      port: ${REDIS_PORT:6379}
+
+  rabbitmq:
+    host: ${RABBITMQ_HOST:rabbitmq}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+
   datasource:
     url: ${DATASOURCE_URL}
     username: ${DATASOURCE_USERNAME}
@@ -16,7 +27,7 @@ spring:
 
   jpa:
     hibernate:
-      ddl-auto: ${SPRING_JPA_HIBERNATE_DDL_AUTO:update}   # For dev; use 'validate' or 'none' in prod
+      ddl-auto: ${SPRING_JPA_HIBERNATE_DDL_AUTO:update}
     properties:
       hibernate:
         dialect: org.hibernate.dialect.MySQL8Dialect
@@ -33,7 +44,7 @@ logging:
   level:
     root: ${LOGGING_LEVEL_ROOT:INFO}
     org.flywaydb: ${LOGGING_LEVEL_FLYWAY:DEBUG}
-    com.gatepay.userservice: ${LOGGING_LEVEL_PAYMENT_SERVICE:DEBUG}
+    com.gatepay.paymentservice: ${LOGGING_LEVEL_PAYMENT_SERVICE:DEBUG}
     org.springframework: ${LOGGING_LEVEL_SPRING:INFO}
 
 server:
@@ -42,17 +53,15 @@ server:
     include-stacktrace: NEVER
     include-message: ALWAYS
 
-# Eureka client configuration
 eureka:
   client:
     service-url:
       defaultZone: ${EUREKA_DEFAULT_ZONE:http://localhost:8761/eureka/}
     register-with-eureka: ${EUREKA_REGISTER:true}
     fetch-registry: ${EUREKA_FETCH_REGISTRY:true}
-    instance:
-      prefer-ip-address: ${EUREKA_PREFER_IP:true}
+  instance:
+    prefer-ip-address: ${EUREKA_PREFER_IP:true}
 
-# Feign client configuration
 feign:
   client:
     config:
@@ -60,16 +69,28 @@ feign:
         connectTimeout: ${FEIGN_CONNECT_TIMEOUT:5000}
         readTimeout: ${FEIGN_READ_TIMEOUT:5000}
 
-# Paystack config
 paystack:
   secret-key: ${PAYSTACK_SECRET_KEY}
   public-key: ${PAYSTACK_PUBLIC_KEY}
   base-url: ${PAYSTACK_BASE_URL}
   default-currency: ${PAYSTACK_DEFAULT_CURRENCY:NGN}
 
-# Flutterwave config
 flutterwave:
-    secret-key: ${FLUTTERWAVE_SECRET_KEY}
-    public-key: ${FLUTTERWAVE_PUBLIC_KEY}
-    base-url: ${FLUTTERWAVE_BASE_URL}
-    encryption-key: ${FLUTTERWAVE_ENCRYPTION_KEY}
+  secret-key: ${FLUTTERWAVE_SECRET_KEY}
+  public-key: ${FLUTTERWAVE_PUBLIC_KEY}
+  base-url: ${FLUTTERWAVE_BASE_URL}
+  encryption-key: ${FLUTTERWAVE_ENCRYPTION_KEY}
+
+management:
+  tracing:
+    sampling:
+      probability: 1.0
+  zipkin:
+    tracing:
+      endpoint: http://zipkin:9411/api/v2/spans
+
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui.html

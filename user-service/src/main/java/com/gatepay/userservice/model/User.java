@@ -47,11 +47,14 @@ public class User {
             joinColumns = @JoinColumn(name = "user_id"),
             inverseJoinColumns = @JoinColumn(name = "role_id")
     )
+    @Builder.Default
     private Set<Role> roles = new HashSet<>();
 
     @Enumerated(EnumType.STRING)
+    @Builder.Default
     private AccountStatus status = AccountStatus.PENDING_VERIFICATION;
 
+    @Builder.Default
     private boolean kycVerified = false;
 
     @Column(nullable = false, updatable = false)
