@@ -206,7 +206,7 @@ services:
     environment:
       - JAVA_OPTS=-Xms64m -Xmx256m
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8084/actuator/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8084/api/v1/notifications/actuator/health"]
       interval: 30s
       timeout: 15s
       retries: 10
@@ -273,6 +273,8 @@ services:
   mysql_user_service:
     image: mysql:8
     container_name: gatepay-mysql-user
+    mem_limit: 512m
+    command: --innodb-buffer-pool-size=128M --performance-schema=OFF
     environment:
       MYSQL_ROOT_PASSWORD: root
       MYSQL_DATABASE: gatepay_user_service
@@ -291,6 +293,8 @@ services:
   mysql_kyc_service:
     image: mysql:8
     container_name: gatepay-mysql-kyc
+    mem_limit: 512m
+    command: --innodb-buffer-pool-size=128M --performance-schema=OFF
     environment:
       MYSQL_ROOT_PASSWORD: root
       MYSQL_DATABASE: gatepay_kyc_service
@@ -309,6 +313,8 @@ services:
   mysql_payment_service:
     image: mysql:8
     container_name: gatepay-mysql-payment
+    mem_limit: 512m
+    command: --innodb-buffer-pool-size=128M --performance-schema=OFF
     environment:
       MYSQL_ROOT_PASSWORD: root
       MYSQL_DATABASE: gatepay_payment_service

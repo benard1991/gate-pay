@@ -1,69 +1,48 @@
 spring:
   application:
-    name: ${SPRING_APPLICATION_NAME:user-service}
-
-  datasource:
-    url: ${DB_URL}
-    username: ${DB_USERNAME}
-    password: ${DB_PASSWORD}
-    driver-class-name: ${DB_DRIVER:com.mysql.cj.jdbc.Driver}
-    hikari:
-      maximum-pool-size: 10
-      minimum-idle: 2
-      idle-timeout: 30000
-      connection-timeout: 20000
-      pool-name: HikariCP
-
-  jpa:
-    hibernate:
-      ddl-auto: ${HIBERNATE_DDL:update}  # update/validate/none
-    properties:
-      hibernate:
-        dialect: ${HIBERNATE_DIALECT:org.hibernate.dialect.MySQL8Dialect}
-        format_sql: true
-        show_sql: false
-
-  flyway:
-    enabled: true
-    baseline-on-migrate: true
-    clean-on-validation-error: false
-    locations: classpath:db/migration
-
-  data:
-    redis:
-      host: ${SPRING_REDIS_HOST:localhost}
-      port: ${SPRING_REDIS_PORT:6379}
+    name: notification-service
 
   rabbitmq:
-    host: ${SPRING_RABBITMQ_HOST:localhost}
-    port: ${SPRING_RABBITMQ_PORT:5672}
-    username: ${SPRING_RABBITMQ_USERNAME:guest}
-    password: ${SPRING_RABBITMQ_PASSWORD:guest}
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+
+  mail:
+    host: ${MAIL_HOST:smtp.mailtrap.io}
+    port: ${MAIL_PORT:2525}
+    username: ${MAIL_USERNAME}
+    password: ${MAIL_PASSWORD}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
 
 logging:
   level:
     root: INFO
-    org.flywaydb: DEBUG
-    com.gatepay.userservice: DEBUG
+    com.gatepay.notificationservice: DEBUG
     org.springframework: INFO
 
 server:
-  port: ${USER_SERVICE_PORT:8082}
+  port: ${SERVER_PORT:8084}
+  servlet:
+    context-path: ${CONTEXT_PATH:/api/v1/notifications}
   error:
     include-stacktrace: NEVER
     include-message: ALWAYS
 
-# Eureka client configuration
 eureka:
   client:
     service-url:
-      defaultZone: ${EUREKA_SERVER_URL:http://localhost:8761/eureka/}
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
     register-with-eureka: true
     fetch-registry: true
-    instance:
-      prefer-ip-address: true  # register service using IP
+  instance:
+    prefer-ip-address: true
 
-# Feign client configuration
 feign:
   client:
     config:
@@ -71,15 +50,13 @@ feign:
         connectTimeout: 5000
         readTimeout: 5000
 
-# Management endpoints (avoid DifferentManagementContextConfiguration error)
 management:
   endpoints:
     web:
       exposure:
-        include: health, info, prometheus
+        include: health, info
   server:
-    port: ${USER_SERVICE_PORT:8082}  # same as main server port
-
+    port: ${SERVER_PORT:8084}
   tracing:
     sampling:
       probability: 1.0
@@ -87,8 +64,8 @@ management:
     tracing:
       endpoint: http://zipkin:9411/api/v2/spans
 
-  springdoc:
-    api-docs:
-      path: /api-docs
-    swagger-ui:
-      path: /swagger-ui.html
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui.html

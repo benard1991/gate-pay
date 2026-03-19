@@ -39,8 +39,9 @@ public enum ErrorCode {
     PAYMENT_NOT_FOUND("PAY_007", "Payment transaction not found", HttpStatus.NOT_FOUND),
     PAYMENT_ALREADY_PROCESSED("PAY_008", "Payment has already been processed", HttpStatus.CONFLICT),
     PROVIDER_ERROR("PAY_009", "Payment provider error", HttpStatus.BAD_GATEWAY),
-    REFERENCE_ERROR("PAY_010", "Payment reference not found", HttpStatus.NOT_FOUND);
-
+    REFERENCE_ERROR("PAY_010", "Payment reference not found", HttpStatus.NOT_FOUND),
+    PAYMENT_PROCESSING("PAY_011", "Payment is being processed. Please wait a moment and try again.", HttpStatus.CONFLICT);
+    
     private final String code;
     private final String message;
     private final HttpStatus status;

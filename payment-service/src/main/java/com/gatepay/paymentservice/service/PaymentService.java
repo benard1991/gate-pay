@@ -18,5 +18,5 @@ public interface PaymentService {
 
     PaymentTransaction fetchTransactionByReference(String reference);
 
-//    public Page<PaymentTransaction> fetchUserTransactionsByUserId(String userId, TransactionFilter filter, int page, int size);
+    public Page<PaymentTransaction> fetchUserTransactionsByUserId(String userId, TransactionFilter filter, int page, int size);
 }

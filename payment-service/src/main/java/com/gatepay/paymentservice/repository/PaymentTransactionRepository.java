@@ -40,22 +40,11 @@ public interface PaymentTransactionRepository extends JpaRepository<PaymentTrans
     Page<PaymentTransaction> findAll(Pageable pageable);
 
 
-//    @Query("""
-//SELECT t FROM PaymentTransaction t
-//WHERE t.userId = :userId
-//  AND (:status IS NULL OR t.status = :status)
-//  AND (:transactionType IS NULL OR t.type = :transactionType)
-//  AND (:startDate IS NULL OR t.createdAt >= :startDate)
-//  AND (:endDate IS NULL OR t.createdAt <= :endDate)
-//""")
-//    Page<PaymentTransaction> findTransactionsByUserId(
-//            @Param("userId") String userId,
-//            @Param("status") TransactionStatus status,
-//            @Param("transactionType") TransactionType transactionType,
-//            @Param("startDate") LocalDateTime startDate,
-//            @Param("endDate") LocalDateTime endDate,
-//            Pageable pageable
-//    );
+    @Query("SELECT t FROM PaymentTransaction t WHERE t.userId = :userId")
+    Page<PaymentTransaction> findTransactionsByUserId(
+            @Param("userId") String userId,
+            Pageable pageable
+    );
 
 
 

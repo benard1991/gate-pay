@@ -15,6 +15,7 @@ import com.gatepay.paymentservice.repository.AuditLogRepository;
 import com.gatepay.paymentservice.repository.PaymentRepository;
 import com.gatepay.paymentservice.repository.PaymentTransactionRepository;
 import jakarta.persistence.EntityNotFoundException;
+import jakarta.ws.rs.GET;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -521,7 +522,7 @@ public class PaymentServiceImpl implements PaymentService {
 
     private TransactionStatus mapToInternalStatus(String providerStatus) {
         return switch (providerStatus.toUpperCase()) {
-            case "SUCCESS", "PAID", "COMPLETED" -> TransactionStatus.SUCCESS;
+            case "SUCCESS", "SUCCESSFUL", "PAID", "COMPLETED" -> TransactionStatus.SUCCESS;
             case "PENDING", "PROCESSING" -> TransactionStatus.PENDING;
             case "CANCELLED" -> TransactionStatus.CANCELLED;
             default -> TransactionStatus.FAILED;
@@ -555,4 +556,36 @@ public class PaymentServiceImpl implements PaymentService {
                 .orElseThrow(() ->
                         new EntityNotFoundException("Transaction not found: " + reference));
     }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<PaymentTransaction> fetchUserTransactionsByUserId(
+            String userId,
+            TransactionFilter filter,
+            int page,
+            int size
+    ) {
+        Pageable pageable = PageRequest.of(
+                page,
+                size,
+                Sort.by(Sort.Direction.DESC, "createdAt")
+        );
+
+        TransactionStatus status = (filter != null) ? filter.getStatus() : null;
+        TransactionType transactionType = (filter != null) ? filter.getTransactionType() : null;
+
+        LocalDateTime startDate = (filter != null && filter.getStartDate() != null)
+                ? filter.getStartDate().atStartOfDay()
+                : null;
+
+        LocalDateTime endDate = (filter != null && filter.getEndDate() != null)
+                ? filter.getEndDate().atTime(23, 59, 59)
+                : null;
+
+        return transactionRepository.findTransactionsByUserId(
+                userId,
+                pageable
+        );
+    }
+
 }
