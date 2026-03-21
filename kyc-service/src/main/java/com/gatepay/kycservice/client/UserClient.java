@@ -16,7 +16,7 @@ public interface UserClient {
     @GetMapping("/users/{userId}/profile")
     ApiResponse<UserDto> getUserProfile(@PathVariable("userId") Long userId );
 
-    @PutMapping("/users/{userId}/updateKycVerified")
+    @PutMapping("/users/admin/{userId}/updateKycVerified")
     ApiResponse<AdminUserResponseDto> updateKycVerified(
             @PathVariable("userId") Long userId,
             @RequestParam("kycVerified") boolean kycVerified

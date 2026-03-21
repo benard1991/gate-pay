@@ -136,11 +136,17 @@ public class AdminKycServiceImpl implements AdminKycService {
 
 //            // Update kycVerified in user-service ---
             try {
-                boolean kycVerified =  status == KycStatus.APPROVED;
+                boolean kycVerified = status == KycStatus.APPROVED;
                 log.info("Updated user-service kycVerified | userId={} | kycVerified={}", saved.getUserId(), kycVerified);
 
                 userClient.updateKycVerified(saved.getUserId(), kycVerified);
                 log.info("Updated user-service kycVerified | userId={} | kycVerified={}", saved.getUserId(), kycVerified);
+
+                if (kycVerified) {
+                    kycNotificationProducer.sendKycApprovedEvent(saved.getUserId());
+                    log.info("KYC approved event published for wallet creation | userId={}", saved.getUserId());
+                }
+
             } catch (Exception ex) {
                 log.error("Failed to update user-service kycVerified | userId={} | error={}", saved.getUserId(), ex.getMessage(), ex);
             }

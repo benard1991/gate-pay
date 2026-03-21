@@ -11,6 +11,7 @@ COPY discovery-service/pom.xml discovery-service/
 COPY kyc-service/pom.xml kyc-service/
 COPY payment-service/pom.xml payment-service/
 COPY gateway-service/pom.xml gateway-service/
+COPY wallet-service/pom.xml wallet-service/
 
 # Copy source code
 COPY . .

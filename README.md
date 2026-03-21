@@ -1,7 +1,13 @@
 # GatePay — Microservices Payment Gateway
 
-GatePay is a payment gateway built on a microservices architecture using Java 17, Spring Boot 3, and Spring Cloud. It covers the full lifecycle of a payment platform — user onboarding, authentication, KYC verification, payments, wallet management, and async notifications — across 8 independently deployable services.
-
+GatePay is a production-grade payment gateway built on a microservices
+architecture using Java 17, Spring Boot 3, and Spring Cloud. It covers
+the full lifecycle of a payment platform — user onboarding, JWT
+authentication with OTP, KYC verification with document uploads,
+multi-provider payment processing (Paystack & Flutterwave), event-driven
+wallet management with idempotency and optimistic locking, and async
+email notifications — across 8 independently deployable services
+orchestrated via Docker Compose.
 ---
 
 ## Architecture
@@ -15,11 +21,12 @@ flowchart TB
     AUTH["Auth Service\n(Port 8081)\nLogin · OTP · Forgot & Reset Password"]
     USER["User Service\n(Port 8082)\nRegistration · Profiles · Roles"]
     PAY["Payment Service\n(Port 8087)\nPaystack · Flutterwave"]
-    WALLET["Wallet Service\n(Port 8086)\nBalances · Deposits · Withdrawals"]
+    WALLET["Wallet Service\n(Port 8086)\nBalances · Credits · Debits · Reversals"]
     KYC["KYC Service\n(Port 8085)\nDocument Upload · Admin Approval"]
     NOTIFY["Notification Service\n(Port 8084)\nAsync Email Dispatch"]
 
     MQ[("RabbitMQ\nAsync Messaging")]
+    REDIS[("Redis\nIdempotency · Caching")]
 
     DS -.->|all services register| GW
 
@@ -33,12 +40,18 @@ flowchart TB
     KYC <-->|Feign| USER
     PAY -->|Feign| USER
     PAY -->|Feign| KYC
+    WALLET -->|Feign| USER
 
     AUTH -->|"OTP · login · forgot/reset password"| MQ
     USER -->|registration| MQ
-    KYC -->|"registration · status updates"| MQ
+    KYC -->|"status updates · kyc.approved"| MQ
+    PAY -->|"payment.success"| MQ
 
     MQ --> NOTIFY
+    MQ -->|"kyc.approved → create wallet"| WALLET
+    MQ -->|"payment.success → credit wallet"| WALLET
+
+    WALLET --> REDIS
 ```
 
 ---
@@ -52,7 +65,7 @@ flowchart TB
 | `auth-service` | 8081 | Issues and validates JWTs, handles OTP flows, login, and password reset |
 | `user-service` | 8082 | User registration, profile management, and role assignment |
 | `payment-service` | 8087 | Processes payments via Paystack and Flutterwave with automatic failover |
-| `wallet-service` | 8086 | Manages user wallets — balances, deposits, and withdrawals |
+| `wallet-service` | 8086 | Manages user wallets — balances, credits, debits, reversals, and transaction history |
 | `kyc-service` | 8085 | Document uploads via Cloudinary and admin KYC approval workflows |
 | `notification-service` | 8084 | Consumes RabbitMQ events and dispatches transactional emails |
 
@@ -167,6 +180,97 @@ Each service exposes its own interactive API documentation via Swagger UI. All e
 
 ---
 
+## Wallet Service
+
+The wallet service manages per-user wallets and all money movement across the platform. It is fully event-driven — wallets are created automatically when KYC is approved, and credited automatically when a payment is verified.
+
+### Wallet Lifecycle
+
+```
+User registers
+      ↓
+User submits KYC documents
+      ↓
+Admin approves KYC
+      ↓
+kyc-service publishes KYC_APPROVED event
+      ↓
+wallet-service auto-creates wallet
+      ↓
+User gets email — "Your wallet is ready"
+      ↓
+User makes payment via payment-service
+      ↓
+payment-service publishes PAYMENT_SUCCESS event
+      ↓
+wallet-service auto-credits wallet
+      ↓
+User gets email — "Your wallet has been credited ₦X"
+```
+
+### Wallet API Endpoints
+
+#### User Endpoints — `ROLE_USER`
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/v1/wallets/{userId}` | Get wallet balance |
+| `POST` | `/api/v1/wallets/debit` | Debit wallet |
+| `GET` | `/api/v1/wallets/{userId}/transactions` | Get paginated transaction history |
+| `GET` | `/api/v1/wallets/transactions/{reference}` | Get transaction by reference |
+
+#### Admin Endpoints — `ROLE_ADMIN`
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `POST` | `/api/v1/wallets/admin` | Manually create wallet |
+| `GET` | `/api/v1/wallets/admin/{userId}` | Get any user's wallet |
+| `POST` | `/api/v1/wallets/admin/credit` | Credit a wallet |
+| `POST` | `/api/v1/wallets/admin/reverse/{reference}` | Reverse a transaction |
+| `PATCH` | `/api/v1/wallets/admin/{userId}/suspend` | Suspend a wallet |
+| `PATCH` | `/api/v1/wallets/admin/{userId}/reactivate` | Reactivate a wallet |
+| `PATCH` | `/api/v1/wallets/admin/{userId}/close` | Close a wallet |
+| `GET` | `/api/v1/wallets/admin/{userId}/transactions` | Get any user's transactions |
+
+### Transaction Filters
+
+The transaction history endpoint supports the following query parameters:
+
+| Parameter | Type | Description |
+|---|---|---|
+| `type` | `CREDIT / DEBIT` | Filter by transaction type |
+| `source` | `TOPUP / COMMISSION / TRANSFER / REVERSAL / REFUND / WITHDRAWAL` | Filter by source |
+| `status` | `PENDING / SUCCESS / FAILED / REVERSED` | Filter by status |
+| `from` | `LocalDateTime` | Start date filter |
+| `to` | `LocalDateTime` | End date filter |
+| `page` | `int` | Page number (default: 0) |
+| `size` | `int` | Page size (default: 20) |
+
+### Industrial Standards Applied
+
+| Standard | Implementation |
+|---|---|
+| **Idempotency** | Every credit and debit requires a unique `idempotencyKey`. Duplicate requests return the cached response from Redis — no double charges |
+| **Optimistic Locking** | `@Version` on the `Wallet` entity prevents race conditions on concurrent balance updates |
+| **Double-entry** | Every transaction records `balanceBefore` and `balanceAfter` — full audit trail |
+| **Dead Letter Queues** | All RabbitMQ queues have DLQs — failed messages are never lost |
+| **Event-driven** | Wallet creation and credits are triggered by RabbitMQ events — no tight coupling to KYC or payment services |
+| **Separation of concerns** | Admin and user endpoints are in separate controllers |
+
+### RabbitMQ Events
+
+| Event | Publisher | Consumer | Action |
+|---|---|---|---|
+| `kyc.approved` | kyc-service | wallet-service | Auto-create wallet |
+| `payment.success` | payment-service | wallet-service | Auto-credit wallet |
+| `wallet.credit` | wallet-service | — | Internal audit |
+| `wallet.debit` | wallet-service | — | Internal audit |
+| `wallet.reversal` | wallet-service | — | Internal audit |
+| `wallet.created` | wallet-service | notification-service | Send email |
+| `wallet.suspended` | wallet-service | notification-service | Send email |
+
+---
+
 ## Distributed Tracing (Zipkin)
 
 GatePay uses [Zipkin](https://zipkin.io) for distributed tracing. Every request that flows through the system — from the API Gateway through to downstream services — is automatically traced and recorded.
@@ -203,13 +307,16 @@ docker compose down
 docker compose down -v
 
 # Rebuild and restart a single service
-docker compose build user-service && docker compose up -d user-service
+docker compose build wallet-service && docker compose up -d wallet-service
 
 # Tail logs for a specific service
-docker compose logs -f auth-service
+docker compose logs -f wallet-service
 
 # Check health status of all services
 docker compose ps
+
+# Connect to wallet MySQL database
+mysql -h 127.0.0.1 -P 3310 -u root -p gatepay_wallet_service
 ```
 
 ---
@@ -226,19 +333,19 @@ Payment-service integrates with both Paystack and Flutterwave. If one provider f
 
 ### Wallet
 
-Wallet-service runs independently of payment-service. It manages per-user balances and enforces deposit and withdrawal limits.
+Wallet-service runs independently of payment-service. Wallets are created automatically after KYC approval via a RabbitMQ event. Credits happen automatically after payment verification via another RabbitMQ event. All balance mutations use optimistic locking to prevent race conditions, and every transaction is idempotent via Redis-backed idempotency keys. Admin reversals are available for correcting erroneous transactions.
 
 ### KYC
 
-Users upload identity documents through the KYC service, which stores them via Cloudinary. Admins review and approve or reject submissions through a dedicated workflow. Redis is used to enforce idempotency on document submissions.
+Users upload identity documents through the KYC service, which stores them via Cloudinary. Admins review and approve or reject submissions through a dedicated workflow. Redis is used to enforce idempotency on document submissions. On approval, a `kyc.approved` event is published to RabbitMQ which triggers automatic wallet creation.
 
 ### Notifications
 
-No service sends emails directly. Auth, User, and KYC publish events to RabbitMQ — covering registration, login, OTP, password reset, and KYC status changes. The notification service consumes those events and handles dispatch. This keeps services decoupled and makes it straightforward to extend the notification layer without touching upstream services.
+No service sends emails directly. Auth, User, KYC, and Wallet publish events to RabbitMQ — covering registration, login, OTP, password reset, KYC status changes, and wallet operations. The notification service consumes those events and handles dispatch. This keeps services decoupled and makes it straightforward to extend the notification layer without touching upstream services.
 
 ### Resilience
 
-The circuit breaker lives at the gateway level. When a downstream service becomes unhealthy, the circuit opens and a fallback response is returned immediately — preventing cascading failures across the system. The circuit moves through three states: `CLOSED` under normal operation, `OPEN` when the failure threshold is breached, and `HALF_OPEN` when testing whether the service has recovered.
+The circuit breaker lives at the gateway level. When a downstream service becomes unhealthy, the circuit opens and a fallback response is returned immediately — preventing cascading failures across the system. The circuit moves through three states: `CLOSED` under normal operation, `OPEN` when the failure threshold is breached, and `HALF_OPEN` when testing whether the service has recovered. All RabbitMQ queues have Dead Letter Queues — failed messages are never silently dropped.
 
 ---
 
@@ -255,6 +362,22 @@ gate-pay/
 ├── user-service/
 ├── payment-service/
 ├── wallet-service/
+│   ├── src/main/java/com/gatepay/walletservice/
+│   │   ├── client/              # Feign clients
+│   │   ├── config/              # RabbitMQ, Security config
+│   │   ├── controller/          # User and Admin controllers
+│   │   ├── dto/                 # Request, Response, External DTOs
+│   │   ├── enums/               # WalletStatus, TransactionType etc.
+│   │   ├── exception/           # ErrorCode, GlobalExceptionHandler
+│   │   ├── listener/            # KycEventListener, PaymentEventListener
+│   │   ├── model/               # Wallet, WalletTransaction
+│   │   ├── repository/          # WalletRepository, WalletTransactionRepository
+│   │   └── service/             # WalletService, TransactionService, IdempotencyService, WalletEventService
+│   ├── src/main/resources/
+│   │   └── application.yml
+│   ├── .env
+│   ├── .env.example
+│   └── Dockerfile
 ├── kyc-service/
 └── notification-service/
 ```
@@ -269,7 +392,7 @@ Each service reads from its own `.env` file. Refer to the `.env.example` in each
 
 ## Author
 
-**Nwabueze Ifeanyi Benard**  
-Senior Backend Engineer  
-[nwabuezebenard@gmail.com](mailto:nwabuezebenard@gmail.com)  
+**Nwabueze Ifeanyi Benard**
+Backend Engineer
+[nwabuezebenard@gmail.com](mailto:nwabuezebenard@gmail.com)
 Lagos, Nigeria

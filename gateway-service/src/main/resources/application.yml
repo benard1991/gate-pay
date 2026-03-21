@@ -1,6 +1,9 @@
 server:
   port: ${SERVER_PORT:8080}
 
+# ==========================
+# SPRING CONFIGURATION
+# ==========================
 spring:
   application:
     name: ${SPRING_APPLICATION_NAME:gateway-service}
@@ -25,9 +28,10 @@ spring:
     gateway:
       httpclient:
         connect-timeout: ${GATEWAY_CONNECT_TIMEOUT:3000}
-        response-timeout: ${GATEWAY_RESPONSE_TIMEOUT:30s}  # increased from 5s
+        response-timeout: ${GATEWAY_RESPONSE_TIMEOUT:30s}
 
       routes:
+
         # ==========================
         # AUTH SERVICE ROUTES
         # ==========================
@@ -126,7 +130,7 @@ spring:
         - id: payment-service
           uri: lb://payment-service
           predicates:
-            - Path=/api/v1/payments/**  # fixed: was /api/v1/payment/**
+            - Path=/api/v1/payments/**
           filters:
             - StripPrefix=2
             - name: CircuitBreaker
@@ -143,8 +147,32 @@ spring:
                   maxBackoff: 1s
                   factor: 2
 
+        # ==========================
+        # WALLET SERVICE ROUTES
+        # ==========================
+        - id: wallet-service
+          uri: lb://wallet-service
+          predicates:
+            - Path=/api/v1/wallets/**
+          filters:
+            - StripPrefix=2
+            - name: CircuitBreaker
+              args:
+                name: walletServiceCB
+                fallbackUri: forward:/fallback/wallet
+            - name: Retry
+              args:
+                retries: 2
+                methods: GET, POST
+                statuses: BAD_GATEWAY, GATEWAY_TIMEOUT, INTERNAL_SERVER_ERROR
+                backoff:
+                  firstBackoff: 200ms
+                  maxBackoff: 1s
+                  factor: 2
+
+
 # ==========================
-# RESILIENCE4J CIRCUIT BREAKER & TIMELIMITER
+# RESILIENCE4J CONFIGURATION
 # ==========================
 resilience4j:
   circuitbreaker:
@@ -174,6 +202,11 @@ resilience4j:
         sliding-window-size: ${PAYMENT_CB_SLIDING_WINDOW:20}
         minimum-number-of-calls: ${PAYMENT_CB_MIN_CALLS:10}
         wait-duration-in-open-state: ${PAYMENT_CB_WAIT_DURATION:30s}
+      walletServiceCB:
+        failure-rate-threshold: ${WALLET_CB_FAILURE_RATE:40}
+        sliding-window-size: ${WALLET_CB_SLIDING_WINDOW:20}
+        minimum-number-of-calls: ${WALLET_CB_MIN_CALLS:10}
+        wait-duration-in-open-state: ${WALLET_CB_WAIT_DURATION:30s}
 
   timelimiter:
     instances:
@@ -187,6 +220,9 @@ resilience4j:
         timeout-duration: ${NOTIFICATION_CB_TIMEOUT:25s}
       paymentServiceCB:
         timeout-duration: ${PAYMENT_CB_TIMEOUT:25s}
+      walletServiceCB:
+        timeout-duration: ${WALLET_CB_TIMEOUT:25s}
+
 
 # ==========================
 # EUREKA CLIENT CONFIGURATION
@@ -203,12 +239,14 @@ eureka:
     metadata-map:
       instanceId: ${spring.application.name}:${spring.application.instance_id:${random.value}}
 
+
 # ==========================
 # JWT CONFIGURATION
 # ==========================
 jwt:
   secret: ${JWT_SECRET}
   expiration-ms: ${JWT_EXPIRATION_MS:3600000}
+
 
 # ==========================
 # PUBLIC PATHS (JWT EXCLUDED)
@@ -225,6 +263,7 @@ gateway:
       - /api/ping
       - /actuator/health
 
+
 # ==========================
 # LOGGING CONFIGURATION
 # ==========================
@@ -235,6 +274,7 @@ logging:
     org.springframework.security: ${LOG_LEVEL_SECURITY:DEBUG}
     com.gatepay.gatewayservice.security.JwtAuthFilter: TRACE
     io.github.resilience4j.circuitbreaker: ${LOG_LEVEL_RESILIENCE:DEBUG}
+
 
 # ==========================
 # ACTUATOR SETTINGS
@@ -258,9 +298,12 @@ management:
     tracing:
       endpoint: http://zipkin:9411/api/v2/spans
 
-  springdoc:
-    api-docs:
-      path: /api-docs
-    swagger-ui:
-      path: /swagger-ui.html
 
+# ==========================
+# SPRINGDOC / SWAGGER
+# ==========================
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui.html

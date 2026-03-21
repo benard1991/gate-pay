@@ -1,0 +1,94 @@
+server:
+  port: ${SERVER_PORT:8086}
+
+spring:
+  application:
+    name: ${SPRING_APPLICATION_NAME:wallet-service}
+
+  datasource:
+    url: ${SPRING_DATASOURCE_URL}
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
+    driver-class-name: ${SPRING_DATASOURCE_DRIVER_CLASS_NAME}
+
+  jpa:
+    hibernate:
+      ddl-auto: ${SPRING_JPA_HIBERNATE_DDL_AUTO:update}
+    show-sql: ${SPRING_JPA_SHOW_SQL:false}
+    properties:
+      hibernate:
+        dialect: ${SPRING_JPA_PROPERTIES_HIBERNATE_DIALECT}
+
+  rabbitmq:
+    host: ${SPRING_RABBITMQ_HOST:rabbitmq}
+    port: ${SPRING_RABBITMQ_PORT:5672}
+    username: ${SPRING_RABBITMQ_USERNAME:guest}
+    password: ${SPRING_RABBITMQ_PASSWORD:guest}
+
+  data:
+    redis:
+      host: ${SPRING_REDIS_HOST:redis}
+      port: ${SPRING_REDIS_PORT:6379}
+
+# Wallet RabbitMQ
+wallet:
+  rabbitmq:
+    exchange: ${WALLET_RABBITMQ_EXCHANGE:wallet.exchange}
+    routing-key:
+      credit:    ${WALLET_RABBITMQ_ROUTING_KEY_CREDIT:wallet.credit}
+      debit:     ${WALLET_RABBITMQ_ROUTING_KEY_DEBIT:wallet.debit}
+      reversal:  ${WALLET_RABBITMQ_ROUTING_KEY_REVERSAL:wallet.reversal}
+      created:   ${WALLET_RABBITMQ_ROUTING_KEY_CREATED:wallet.created}
+      suspended: ${WALLET_RABBITMQ_ROUTING_KEY_SUSPENDED:wallet.suspended}
+  idempotency:
+    ttl-hours: ${WALLET_IDEMPOTENCY_TTL_HOURS:24}
+  default-currency: ${WALLET_DEFAULT_CURRENCY:NGN}
+
+# Notification RabbitMQ
+notification:
+  rabbitmq:
+    exchange: ${NOTIFICATION_RABBITMQ_EXCHANGE:notification.exchange}
+    routing-key: ${NOTIFICATION_RABBITMQ_ROUTING_KEY:notification.routing.key}
+
+# Eureka
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE:http://localhost:8761/eureka/}
+  instance:
+    prefer-ip-address: ${EUREKA_INSTANCE_PREFER_IP_ADDRESS:true}
+    health-check-url-path: /actuator/health
+
+# Actuator
+management:
+  endpoints:
+    web:
+      exposure:
+        include: ${MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE:health,info,metrics}
+  endpoint:
+    health:
+      show-details: ${MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS:always}
+  zipkin:
+    tracing:
+      endpoint: ${MANAGEMENT_ZIPKIN_TRACING_ENDPOINT:http://zipkin:9411/api/v2/spans}
+  tracing:
+    sampling:
+      probability: ${MANAGEMENT_TRACING_SAMPLING_PROBABILITY:1.0}
+
+# Logging
+logging:
+  level:
+    root: INFO
+    com.gatepay.walletservice: DEBUG
+
+# KYC RabbitMQ
+kyc:
+  rabbitmq:
+    queue:
+      approved: ${KYC_RABBITMQ_QUEUE_APPROVED:kyc.approved.queue}
+
+# Payment RabbitMQ
+payment:
+  rabbitmq:
+    queue:
+      success: ${PAYMENT_RABBITMQ_QUEUE_SUCCESS:payment.success.queue}

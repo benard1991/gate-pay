@@ -60,4 +60,14 @@ public class GatewayFallbackController {
                         "message", "payment service is unavailable"
                 ));
     }
+
+    @RequestMapping("/wallet")
+    public ResponseEntity<Map<String, Object>> walletFallback() {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(Map.of(
+                        "status", HttpStatus.SERVICE_UNAVAILABLE.value(),
+                        "service", "WALLET",
+                        "message", "Wallet service is temporarily unavailable. Please try again later."
+                ));
+    }
 }

@@ -1,342 +1,61 @@
-networks:
-  gatepay-network:
-    driver: bridge
+server:
+  port: ${USER_SERVICE_PORT:8082}
 
-volumes:
-  mysql_user_data:
-  mysql_kyc_data:
-  mysql_payment_data:
+spring:
+  application:
+    name: ${SPRING_APPLICATION_NAME:user-service}
 
-services:
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    driver-class-name: ${DB_DRIVER}
 
-  # ==============================
-  # DISCOVERY SERVICE
-  # ==============================
-  discovery-service:
-    build:
-      context: .
-      dockerfile: ./discovery-service/Dockerfile
-    env_file:
-      - ./discovery-service/.env
-    ports:
-      - "8761:8761"
-    networks:
-      - gatepay-network
-    restart: on-failure
-    mem_limit: 512m
-    environment:
-      - JAVA_OPTS=-Xms64m -Xmx256m
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8761/actuator/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 10
-      start_period: 90s
+  jpa:
+    hibernate:
+      ddl-auto: ${HIBERNATE_DDL:update}
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: ${HIBERNATE_DIALECT}
 
-  # ==============================
-  # GATEWAY SERVICE
-  # ==============================
-  gateway-service:
-    build:
-      context: .
-      dockerfile: ./gateway-service/Dockerfile
-    env_file:
-      - ./gateway-service/.env
-    ports:
-      - "9090:8080"
-    depends_on:
-      discovery-service:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    networks:
-      - gatepay-network
-    restart: on-failure
-    mem_limit: 512m
-    environment:
-      - JAVA_OPTS=-Xms64m -Xmx256m
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 10
-      start_period: 90s
+  data:
+    redis:
+      host: ${SPRING_REDIS_HOST:redis}
+      port: ${SPRING_REDIS_PORT:6379}
 
-  # ==============================
-  # USER SERVICE
-  # ==============================
-  user-service:
-    build:
-      context: .
-      dockerfile: ./user-service/Dockerfile
-    env_file:
-      - ./user-service/.env
-    ports:
-      - "8082:8082"
-    depends_on:
-      discovery-service:
-        condition: service_healthy
-      mysql_user_service:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
-    networks:
-      - gatepay-network
-    restart: on-failure
-    mem_limit: 512m
-    environment:
-      - JAVA_OPTS=-Xms64m -Xmx256m
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8082/actuator/health"]
-      interval: 30s
-      timeout: 15s
-      retries: 10
-      start_period: 150s
-
-  # ==============================
-  # AUTH SERVICE
-  # ==============================
-  auth-service:
-    build:
-      context: .
-      dockerfile: ./auth-service/Dockerfile
-    env_file:
-      - ./auth-service/.env
-    ports:
-      - "8081:8081"
-    depends_on:
-      discovery-service:
-        condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
-      user-service:
-        condition: service_healthy
-    networks:
-      - gatepay-network
-    restart: on-failure
-    mem_limit: 512m
-    environment:
-      - JAVA_OPTS=-Xms64m -Xmx256m
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8081/actuator/health"]
-      interval: 30s
-      timeout: 15s
-      retries: 10
-      start_period: 150s
-
-  # ==============================
-  # KYC SERVICE
-  # ==============================
-  kyc-service:
-    build:
-      context: .
-      dockerfile: ./kyc-service/Dockerfile
-    env_file:
-      - ./kyc-service/.env
-    ports:
-      - "8085:8085"
-    depends_on:
-      discovery-service:
-        condition: service_healthy
-      mysql_kyc_service:
-        condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
-    networks:
-      - gatepay-network
-    restart: on-failure
-    mem_limit: 512m
-    environment:
-      - JAVA_OPTS=-Xms64m -Xmx256m
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8085/actuator/health"]
-      interval: 30s
-      timeout: 15s
-      retries: 10
-      start_period: 150s
-
-  # ==============================
-  # PAYMENT SERVICE
-  # ==============================
-  payment-service:
-    build:
-      context: .
-      dockerfile: ./payment-service/Dockerfile
-    env_file:
-      - ./payment-service/.env
-    ports:
-      - "8087:8087"
-    depends_on:
-      discovery-service:
-        condition: service_healthy
-      mysql_payment_service:
-        condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
-    networks:
-      - gatepay-network
-    restart: on-failure
-    mem_limit: 512m
-    environment:
-      - JAVA_OPTS=-Xms64m -Xmx256m
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8087/actuator/health"]
-      interval: 30s
-      timeout: 15s
-      retries: 10
-      start_period: 150s
-
-  # ==============================
-  # NOTIFICATION SERVICE
-  # ==============================
-  notification-service:
-    build:
-      context: .
-      dockerfile: ./notification-service/Dockerfile
-    env_file:
-      - ./notification-service/.env
-    ports:
-      - "8084:8084"
-    depends_on:
-      discovery-service:
-        condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
-    networks:
-      - gatepay-network
-    restart: on-failure
-    mem_limit: 512m
-    environment:
-      - JAVA_OPTS=-Xms64m -Xmx256m
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8084/actuator/health"]
-      interval: 30s
-      timeout: 15s
-      retries: 10
-      start_period: 150s
-
-  # ==============================
-  # REDIS
-  # ==============================
-  redis:
-    image: redis:7
-    container_name: gatepay-redis
-    ports:
-      - "6379"
-    networks:
-      - gatepay-network
-    restart: on-failure
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 20s
-
-  # ==============================
-  # RABBITMQ
-  # ==============================
   rabbitmq:
-    image: rabbitmq:3-management
-    container_name: gatepay-rabbitmq
-    ports:
-      - "5672:5672"
-      - "15672:15672"
-    networks:
-      - gatepay-network
-    restart: on-failure
-    healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "ping"]
-      interval: 15s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
+    host: ${SPRING_RABBITMQ_HOST:rabbitmq}
+    port: ${SPRING_RABBITMQ_PORT:5672}
+    username: ${SPRING_RABBITMQ_USERNAME:guest}
+    password: ${SPRING_RABBITMQ_PASSWORD:guest}
 
-  # ==============================
-  # ZIPKIN
-  # ==============================
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_SERVER_URL:http://localhost:8761/eureka/}
+    register-with-eureka: true
+    fetch-registry: true
+  instance:
+    prefer-ip-address: true
+    health-check-url-path: /actuator/health
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info, metrics
+  endpoint:
+    health:
+      show-details: always
   zipkin:
-    image: openzipkin/zipkin
-    container_name: gatepay-zipkin
-    ports:
-      - "9411:9411"
-    networks:
-      - gatepay-network
-    restart: on-failure
-    healthcheck:
-      test: [ "CMD-SHELL", "wget -qO- http://localhost:9411/health || exit 1" ]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
+    tracing:
+      endpoint: http://zipkin:9411/api/v2/spans
+  tracing:
+    sampling:
+      probability: 1.0
 
-  # ==============================
-  # MYSQL SERVICES
-  # ==============================
-  mysql_user_service:
-    image: mysql:8
-    container_name: gatepay-mysql-user
-    command: --innodb-buffer-pool-size=128M --max-connections=50
-    environment:
-      MYSQL_ROOT_PASSWORD: root
-      MYSQL_DATABASE: gatepay_user_service
-    ports:
-      - "3307:3306"
-    volumes:
-      - mysql_user_data:/var/lib/mysql
-    networks:
-      - gatepay-network
-    restart: on-failure
-    mem_limit: 512m
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 120s
-
-  mysql_kyc_service:
-    image: mysql:8
-    container_name: gatepay-mysql-kyc
-    command: --innodb-buffer-pool-size=128M --max-connections=50
-    environment:
-      MYSQL_ROOT_PASSWORD: root
-      MYSQL_DATABASE: gatepay_kyc_service
-    ports:
-      - "3308:3306"
-    volumes:
-      - mysql_kyc_data:/var/lib/mysql
-    networks:
-      - gatepay-network
-    restart: on-failure
-    mem_limit: 512m
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 120s
-
-  mysql_payment_service:
-    image: mysql:8
-    container_name: gatepay-mysql-payment
-    command: --innodb-buffer-pool-size=128M --max-connections=50
-    environment:
-      MYSQL_ROOT_PASSWORD: root
-      MYSQL_DATABASE: gatepay_payment_service
-    ports:
-      - "3309:3306"
-    volumes:
-      - mysql_payment_data:/var/lib/mysql
-    networks:
-      - gatepay-network
-    restart: on-failure
-    mem_limit: 512m
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 120s
+logging:
+  level:
+    root: INFO
+    com.gatepay.userservice: DEBUG

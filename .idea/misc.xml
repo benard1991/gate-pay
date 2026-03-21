@@ -14,7 +14,6 @@
         <option value="$PROJECT_DIR$/config-service/pom.xml" />
         <option value="$PROJECT_DIR$/test/pom.xml" />
         <option value="$PROJECT_DIR$/testing/pom.xml" />
-        <option value="$PROJECT_DIR$/wallet-service/pom.xml" />
       </set>
     </option>
   </component>

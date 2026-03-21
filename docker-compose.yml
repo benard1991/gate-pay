@@ -2,6 +2,10 @@ networks:
   gatepay-network:
     driver: bridge
 
+volumes:
+  mysql_wallet_data:
+  rabbitmq_data:
+
 services:
 
   # ==============================
@@ -213,6 +217,39 @@ services:
       start_period: 150s
 
   # ==============================
+  # WALLET SERVICE
+  # ==============================
+  wallet-service:
+    build:
+      context: .
+      dockerfile: ./wallet-service/Dockerfile
+    env_file:
+      - ./wallet-service/.env
+    ports:
+      - "8086:8086"
+    depends_on:
+      discovery-service:
+        condition: service_healthy
+      mysql_wallet_service:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - gatepay-network
+    restart: on-failure
+    mem_limit: 512m
+    environment:
+      - JAVA_OPTS=-Xms64m -Xmx256m
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8086/actuator/health"]
+      interval: 30s
+      timeout: 15s
+      retries: 10
+      start_period: 150s
+
+  # ==============================
   # REDIS
   # ==============================
   redis:
@@ -239,6 +276,8 @@ services:
     ports:
       - "5672:5672"
       - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
     networks:
       - gatepay-network
     restart: on-failure
@@ -246,8 +285,8 @@ services:
       test: ["CMD", "rabbitmq-diagnostics", "ping"]
       interval: 15s
       timeout: 10s
-      retries: 5
-      start_period: 60s
+      retries: 10
+      start_period: 120s
 
   # ==============================
   # ZIPKIN
@@ -320,6 +359,28 @@ services:
       MYSQL_DATABASE: gatepay_payment_service
     ports:
       - "3309:3306"
+    networks:
+      - gatepay-network
+    restart: on-failure
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+
+  mysql_wallet_service:
+    image: mysql:8
+    container_name: gatepay-mysql-wallet
+    mem_limit: 512m
+    command: --innodb-buffer-pool-size=128M --performance-schema=OFF
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: gatepay_wallet_service
+    ports:
+      - "3310:3306"
+    volumes:
+      - mysql_wallet_data:/var/lib/mysql
     networks:
       - gatepay-network
     restart: on-failure

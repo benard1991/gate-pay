@@ -11,11 +11,11 @@ import com.gatepay.paymentservice.model.AuditLog;
 import com.gatepay.paymentservice.model.Payment;
 import com.gatepay.paymentservice.model.PaymentTransaction;
 import com.gatepay.paymentservice.model.enums.*;
+import com.gatepay.paymentservice.producer.PaymentEventProducer;
 import com.gatepay.paymentservice.repository.AuditLogRepository;
 import com.gatepay.paymentservice.repository.PaymentRepository;
 import com.gatepay.paymentservice.repository.PaymentTransactionRepository;
 import jakarta.persistence.EntityNotFoundException;
-import jakarta.ws.rs.GET;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -44,6 +44,8 @@ public class PaymentServiceImpl implements PaymentService {
     private final PaymentRequestHelper paymentRequestHelper;
     private final IdempotencyService idempotencyService;
     private final ObjectMapper objectMapper;
+    private final PaymentEventProducer paymentEventProducer; // ← add this
+
 
     private static final Duration IDEMPOTENCY_TTL = Duration.ofMinutes(30);
 
@@ -434,6 +436,7 @@ public class PaymentServiceImpl implements PaymentService {
 
         if (newStatus == TransactionStatus.SUCCESS) {
             createPaymentRecordIfAbsent(tx, provider);
+            publishPaymentSuccessEvent(tx);
         }
 
         saveAuditLog(tx, performedBy, ipAddress, userAgent, oldData, newStatus);
@@ -528,6 +531,26 @@ public class PaymentServiceImpl implements PaymentService {
             default -> TransactionStatus.FAILED;
         };
     }
+
+    private void publishPaymentSuccessEvent(PaymentTransaction tx) {
+        try {
+            Map<String, Object> payload = Map.of(
+                    "userId",    tx.getUserId(),
+                    "amount",    tx.getAmount(),
+                    "reference", tx.getReference(),
+                    "currency",  tx.getCurrency(),
+                    "event",     "PAYMENT_SUCCESS"
+            );
+            paymentEventProducer.sendPaymentSuccessEvent(payload);
+            log.info("Payment success event published | ref={} | userId={}",
+                    tx.getReference(), tx.getUserId());
+        } catch (Exception e) {
+            log.error("Failed to publish payment success event | ref={} | error={}",
+                    tx.getReference(), e.getMessage());
+        }
+    }
+
+
 
     // ======================================================
     // READ OPERATIONS
