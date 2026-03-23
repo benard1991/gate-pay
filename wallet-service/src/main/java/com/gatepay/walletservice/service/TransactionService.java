@@ -17,4 +17,6 @@ public interface TransactionService {
             Long userId,
             TransactionFilterRequest filter
     );
+    PageResponse<WalletTransactionResponse> getAllTransactions(AdminTransactionFilterRequest filter);
+
 }

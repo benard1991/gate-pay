@@ -1,6 +1,8 @@
 package com.gatepay.walletservice.service;
 
 import com.gatepay.walletservice.dto.CreateWalletRequest;
+import com.gatepay.walletservice.dto.PageResponse;
+import com.gatepay.walletservice.dto.WalletFilterRequest;
 import com.gatepay.walletservice.dto.WalletResponse;
 
 public interface WalletService {
@@ -18,4 +20,7 @@ public interface WalletService {
     WalletResponse reactivateWallet(Long userId);
 
     boolean walletExists(Long userId);
+
+    PageResponse<WalletResponse> getAllWallets(WalletFilterRequest filter);
+
 }

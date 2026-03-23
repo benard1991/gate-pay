@@ -16,11 +16,14 @@ import com.gatepay.walletservice.exception.WalletServiceException;
 import com.gatepay.walletservice.model.*;
 import com.gatepay.walletservice.repository.WalletRepository;
 import com.gatepay.walletservice.repository.WalletTransactionRepository;
+import com.gatepay.walletservice.specification.TransactionSpecification;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -316,6 +319,38 @@ public class TransactionServiceImpl implements TransactionService {
                 .last(page.isLast())
                 .build();
     }
+
+    // ─────────────────────────────────────────
+// GET ALL TRANSACTIONS (ADMIN)
+// ─────────────────────────────────────────
+    @Override
+    @Transactional(readOnly = true)
+    public PageResponse<WalletTransactionResponse> getAllTransactions(AdminTransactionFilterRequest filter) {
+
+        Sort sort = filter.getSortDirection().equalsIgnoreCase("asc")
+                ? Sort.by(filter.getSortBy()).ascending()
+                : Sort.by(filter.getSortBy()).descending();
+
+        Pageable pageable = PageRequest.of(filter.getPage(), filter.getSize(), sort);
+
+        Specification<WalletTransaction> spec = TransactionSpecification.buildFilter(
+                filter.getWalletId(),
+                filter.getUserId(),
+                filter.getType(),
+                filter.getSource(),
+                filter.getStatus(),
+                filter.getFrom(),
+                filter.getTo()
+        );
+
+        Page<WalletTransaction> page = transactionRepository.findAll(spec, pageable);
+
+        log.info("Admin fetched all transactions - type: {}, status: {}, userId: {}",
+                filter.getType(), filter.getStatus(), filter.getUserId());
+
+        return PageResponse.from(page.map(this::mapToResponse));
+    }
+
 
     // ─────────────────────────────────────────
     // HELPERS

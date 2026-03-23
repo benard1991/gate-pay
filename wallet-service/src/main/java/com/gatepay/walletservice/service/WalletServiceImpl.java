@@ -1,17 +1,17 @@
 package com.gatepay.walletservice.service;
 
-
-
-import com.gatepay.walletservice.dto.CreateWalletRequest;
-import com.gatepay.walletservice.dto.WalletResponse;
+import com.gatepay.walletservice.dto.*;
 import com.gatepay.walletservice.enums.WalletStatus;
 import com.gatepay.walletservice.exception.WalletAlreadyExistsException;
 import com.gatepay.walletservice.exception.WalletNotFoundException;
 import com.gatepay.walletservice.exception.WalletOperationException;
 import com.gatepay.walletservice.model.Wallet;
 import com.gatepay.walletservice.repository.WalletRepository;
+import com.gatepay.walletservice.specification.WalletSpecification;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.*;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -38,8 +38,8 @@ public class WalletServiceImpl implements WalletService {
                 .userId(request.getUserId())
                 .currency(request.getCurrency() != null ? request.getCurrency() : "NGN")
                 .status(WalletStatus.ACTIVE)
-                .balance(BigDecimal.ZERO)        // ← add this
-                .ledgerBalance(BigDecimal.ZERO)  // ← add this
+                .balance(BigDecimal.ZERO)
+                .ledgerBalance(BigDecimal.ZERO)
                 .build();
 
         Wallet saved = walletRepository.save(wallet);
@@ -111,6 +111,30 @@ public class WalletServiceImpl implements WalletService {
     @Override
     public boolean walletExists(Long userId) {
         return walletRepository.existsByUserId(userId);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PageResponse<WalletResponse> getAllWallets(WalletFilterRequest filter) {
+        Sort sort = filter.getSortDirection().equalsIgnoreCase("asc")
+                ? Sort.by(filter.getSortBy()).ascending()
+                : Sort.by(filter.getSortBy()).descending();
+
+        Pageable pageable = PageRequest.of(filter.getPage(), filter.getSize(), sort);
+
+        Specification<Wallet> spec = WalletSpecification.buildFilter(
+                filter.getUserId(),
+                filter.getStatus(),
+                filter.getCurrency()
+        );
+
+        Page<WalletResponse> result = walletRepository.findAll(spec, pageable)
+                .map(this::mapToResponse);
+
+        log.info("Admin fetched all wallets with filters - status: {}, userId: {}, currency: {}",
+                filter.getStatus(), filter.getUserId(), filter.getCurrency());
+
+        return PageResponse.from(result);
     }
 
     private Wallet findActiveWallet(Long userId) {
