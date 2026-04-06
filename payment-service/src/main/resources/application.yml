@@ -81,6 +81,14 @@ flutterwave:
   base-url: ${FLUTTERWAVE_BASE_URL}
   encryption-key: ${FLUTTERWAVE_ENCRYPTION_KEY}
 
+interswitch:
+  client-id: ${INTERSWITCH_CLIENT_ID}
+  secret: ${INTERSWITCH_SECRET}
+  merchant-code: ${INTERSWITCH_MERCHANT_CODE}
+  pay-item-id: ${INTERSWITCH_PAY_ITEM_ID}
+  base-url: ${INTERSWITCH_BASE_URL}
+  mode: ${INTERSWITCH_MODE}
+
 management:
   tracing:
     sampling:

@@ -11,13 +11,6 @@ spring:
   main:
     web-application-type: reactive
 
-  webflux:
-    cors:
-      allowed-origins: ${CORS_ALLOWED_ORIGINS:*}
-      allowed-methods: ${CORS_ALLOWED_METHODS:*}
-      allowed-headers: ${CORS_ALLOWED_HEADERS:*}
-      allow-credentials: ${CORS_ALLOW_CREDENTIALS:true}
-
   data:
     redis:
       host: ${REDIS_HOST:localhost}
@@ -26,6 +19,13 @@ spring:
 
   cloud:
     gateway:
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowedOrigins: "*"
+            allowedMethods: "*"
+            allowedHeaders: "*"
+
       httpclient:
         connect-timeout: ${GATEWAY_CONNECT_TIMEOUT:3000}
         response-timeout: ${GATEWAY_RESPONSE_TIMEOUT:30s}

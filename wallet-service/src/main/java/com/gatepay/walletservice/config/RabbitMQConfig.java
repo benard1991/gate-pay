@@ -8,9 +8,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-import java.util.HashMap;
-import java.util.Map;
-
 @Configuration
 public class RabbitMQConfig {
 
@@ -34,9 +31,6 @@ public class RabbitMQConfig {
 
     @Value("${kyc.rabbitmq.queue.approved:kyc.approved.queue}")
     private String kycApprovedQueue;
-
-    @Value("${payment.rabbitmq.queue.success:payment.success.queue}")
-    private String paymentSuccessQueue;
 
     // ─────────────────────────────────────────
     // DLQ EXCHANGE
@@ -168,27 +162,6 @@ public class RabbitMQConfig {
     @Bean
     public Binding kycApprovedDlqBinding() {
         return BindingBuilder.bind(kycApprovedDlq()).to(dlqExchange()).with("kyc.approved.dlq");
-    }
-
-    // ─────────────────────────────────────────
-    // PAYMENT SUCCESS QUEUE + DLQ (consumer only)
-    // ─────────────────────────────────────────
-    @Bean
-    public Queue paymentSuccessQueue() {
-        return QueueBuilder.durable(paymentSuccessQueue)
-                .withArgument("x-dead-letter-exchange", DLQ_EXCHANGE)
-                .withArgument("x-dead-letter-routing-key", "payment.success.dlq")
-                .build();
-    }
-
-    @Bean
-    public Queue paymentSuccessDlq() {
-        return new Queue("payment.success.dlq", true);
-    }
-
-    @Bean
-    public Binding paymentSuccessDlqBinding() {
-        return BindingBuilder.bind(paymentSuccessDlq()).to(dlqExchange()).with("payment.success.dlq");
     }
 
     // ─────────────────────────────────────────
