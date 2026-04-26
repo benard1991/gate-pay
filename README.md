@@ -321,6 +321,52 @@ mysql -h 127.0.0.1 -P 3310 -u root -p gatepay_wallet_service
 
 ---
 
+## Testing
+
+### Run all tests across all services
+
+From the project root, run:
+
+```bash
+mvn clean test
+```
+
+This executes tests for every module in one shot. Before running integration tests, start the required dependencies:
+
+```bash
+docker compose up -d mysql-auth redis rabbitmq
+```
+
+### Run tests for a specific service
+
+```bash
+mvn clean test -pl auth-service
+mvn clean test -pl user-service
+mvn clean test -pl payment-service
+mvn clean test -pl wallet-service
+mvn clean test -pl kyc-service
+mvn clean test -pl notification-service
+```
+
+### Run a specific test class
+
+```bash
+mvn clean test -pl auth-service -Dtest=OtpServiceImplIntegrationTest
+```
+
+### Test coverage status
+
+| Service | Status |
+|---|---|
+| `auth-service` | ✅ Complete — unit and integration tests |
+| `user-service` | 🔲 Pending |
+| `payment-service` | 🔲 Pending |
+| `wallet-service` | 🔲 Pending |
+| `kyc-service` | 🔲 Pending |
+| `notification-service` | 🔲 Pending |
+
+---
+
 ## How It Works
 
 ### Authentication
