@@ -7,6 +7,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -119,6 +120,21 @@ public class GlobalExceptionHandler {
         return buildError(
                 ErrorCode.INTERNAL_ERROR,
                 "An unexpected error occurred",
+                request.getRequestURI()
+        );
+    }
+
+    // ============================ MISSING PARAMS =================================
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<ErrorResponse> handleMissingParams(
+            MissingServletRequestParameterException ex,
+            HttpServletRequest request) {
+
+        log.warn("Missing required parameter: {}", ex.getParameterName());
+
+        return buildError(
+                ErrorCode.VALIDATION_ERROR,
+                "Required parameter '" + ex.getParameterName() + "' is missing",
                 request.getRequestURI()
         );
     }

@@ -73,6 +73,7 @@ public class AuthServiceImpl implements AuthService {
                 userDto.getLastName(),
                 userDto.getStatus(),
                 userDto.getRoles()
+
         );
 
         // Publish login mail to Notification Service via RabbitMQ

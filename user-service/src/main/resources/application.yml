@@ -5,6 +5,10 @@ spring:
   application:
     name: ${SPRING_APPLICATION_NAME:user-service}
 
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
+
   datasource:
     url: ${DB_URL}
     username: ${DB_USERNAME}
@@ -15,9 +19,9 @@ spring:
     hibernate:
       ddl-auto: ${HIBERNATE_DDL:update}
     show-sql: false
-    properties:
-      hibernate:
-        dialect: ${HIBERNATE_DIALECT}
+#    properties:
+#      hibernate:
+#        dialect: org.hibernate.dialect.MySQLDialect
 
   data:
     redis:
