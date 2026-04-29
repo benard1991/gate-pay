@@ -100,6 +100,7 @@ public class UserServiceImpl implements UserService {
 
 
     @Override
+    @Transactional(readOnly = true)
     @Cacheable(value = "userProfiles", key = "#a0", unless="#result == null")
     public UserDto getUserProfile(Long userId) {
         if (userId == null) {

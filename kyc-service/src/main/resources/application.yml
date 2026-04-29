@@ -1,6 +1,6 @@
 spring:
   application:
-    name: kyc-service
+    name: ${SPRING_APPLICATION_NAME:kyc-service}
 
   data:
     redis:
@@ -12,43 +12,55 @@ spring:
     port: ${RABBITMQ_PORT:5672}
     username: ${RABBITMQ_USERNAME:guest}
     password: ${RABBITMQ_PASSWORD:guest}
+    listener:
+      simple:
+        retry:
+          enabled: true
+          initial-interval: ${RABBITMQ_RETRY_INITIAL_INTERVAL:3000}
+          max-attempts: ${RABBITMQ_RETRY_MAX_ATTEMPTS:5}
 
   datasource:
     url: ${DATASOURCE_URL}
     username: ${DATASOURCE_USERNAME}
     password: ${DATASOURCE_PASSWORD}
-    driver-class-name: com.mysql.cj.jdbc.Driver
+    driver-class-name: ${DB_DRIVER:com.mysql.cj.jdbc.Driver}
     hikari:
-      maximum-pool-size: ${SPRING_DATASOURCE_MAX_POOL_SIZE:10}
-      minimum-idle: ${SPRING_DATASOURCE_MIN_IDLE:2}
-      idle-timeout: ${SPRING_DATASOURCE_IDLE_TIMEOUT:30000}
-      connection-timeout: ${SPRING_DATASOURCE_CONNECTION_TIMEOUT:20000}
+      maximum-pool-size: ${HIKARI_MAX_POOL_SIZE:10}
+      minimum-idle: ${HIKARI_MIN_IDLE:2}
+      idle-timeout: ${HIKARI_IDLE_TIMEOUT:300000}
+      connection-timeout: ${HIKARI_CONNECTION_TIMEOUT:20000}
+      max-lifetime: ${HIKARI_MAX_LIFETIME:600000}
       pool-name: HikariCP
       connection-test-query: SELECT 1
       keepalive-time: 30000
-      max-lifetime: 1800000
 
   jpa:
     hibernate:
-      ddl-auto: ${SPRING_JPA_HIBERNATE_DDL_AUTO:update}
+      ddl-auto: ${HIBERNATE_DDL:none}
+    show-sql: false
+    open-in-view: false
     properties:
       hibernate:
-        dialect: org.hibernate.dialect.MySQL8Dialect
-        format_sql: true
-        show_sql: false
+        # dialect: remove - auto-detected, MySQL8Dialect is also deprecated
+        format_sql: false
+        jdbc:
+          batch_size: ${HIBERNATE_BATCH_SIZE:20}
+        order_inserts: true
+        order_updates: true
 
   flyway:
     enabled: ${SPRING_FLYWAY_ENABLED:true}
-    baseline-on-migrate: ${SPRING_FLYWAY_BASELINE_ON_MIGRATE:true}
-    clean-on-validation-error: ${SPRING_FLYWAY_CLEAN_ON_VALIDATION_ERROR:false}
+    validate-on-migrate: true
+    baseline-on-migrate: false
+    clean-on-validation-error: false
     locations: classpath:db/migration
 
 logging:
   level:
-    root: ${LOGGING_LEVEL_ROOT:INFO}
-    org.flywaydb: ${LOGGING_LEVEL_FLYWAY:DEBUG}
-    com.gatepay.kycservice: ${LOGGING_LEVEL_KYCSERVICE:DEBUG}
-    org.springframework: ${LOGGING_LEVEL_SPRING:INFO}
+    root: ${LOG_LEVEL_ROOT:INFO}
+    org.flywaydb: ${LOG_LEVEL_FLYWAY:DEBUG}
+    com.gatepay.kycservice: ${LOG_LEVEL_KYC_SERVICE:DEBUG}
+    org.springframework: ${LOG_LEVEL_SPRING:INFO}
 
 server:
   port: ${SERVER_PORT:8085}
@@ -62,8 +74,15 @@ eureka:
       defaultZone: ${EUREKA_DEFAULT_ZONE:http://localhost:8761/eureka/}
     register-with-eureka: ${EUREKA_REGISTER:true}
     fetch-registry: ${EUREKA_FETCH_REGISTRY:true}
+    registry-fetch-interval-seconds: ${EUREKA_FETCH_INTERVAL:5}
+    eureka-server-connect-timeout-seconds: ${EUREKA_SERVER_CONNECT_TIMEOUT:10}
+    eureka-server-read-timeout-seconds: ${EUREKA_SERVER_READ_TIMEOUT:10}
+    initial-instance-info-replication-interval-seconds: ${EUREKA_REPLICATION_INTERVAL:5}
   instance:
     prefer-ip-address: ${EUREKA_PREFER_IP:true}
+    health-check-url-path: /actuator/health
+    lease-renewal-interval-in-seconds: ${EUREKA_LEASE_RENEWAL_INTERVAL:10}
+    lease-expiration-duration-in-seconds: ${EUREKA_LEASE_EXPIRATION_DURATION:30}
 
 feign:
   client:
@@ -82,12 +101,19 @@ kyc:
     ttl-minutes: ${KYC_IDEMPOTENCY_TTL_MINUTES:5}
 
 management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info, metrics
+  endpoint:
+    health:
+      show-details: always
   tracing:
     sampling:
-      probability: 1.0
+      probability: ${TRACING_SAMPLING_PROBABILITY:0.1}
   zipkin:
     tracing:
-      endpoint: http://zipkin:9411/api/v2/spans
+      endpoint: ${ZIPKIN_ENDPOINT:http://zipkin:9411/api/v2/spans}
 
 springdoc:
   api-docs:

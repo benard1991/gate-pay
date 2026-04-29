@@ -26,7 +26,7 @@ public class RedisIdempotencyService implements IdempotencyService{
         Boolean success = redisTemplate.opsForValue()
                 .setIfAbsent(redisKey, "LOCKED", Duration.ofMinutes(ttlMinutes));
 
-        if (Boolean.FALSE.equals(success)) {
+        if (!Boolean.TRUE.equals(success)) { // ← handles both false AND null
             throw new IdempotencyException(
                     "Duplicate request detected. Please wait before retrying."
             );

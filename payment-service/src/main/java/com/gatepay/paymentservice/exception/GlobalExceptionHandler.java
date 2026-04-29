@@ -1,4 +1,4 @@
-package com.gatepay.userservice.exception;
+package com.gatepay.paymentservice.exception;
 
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
@@ -35,9 +35,9 @@ public class GlobalExceptionHandler {
     }
 
     // ============================ BUSINESS EXCEPTIONS ============================
-    @ExceptionHandler(UserServiceException.class)
+    @ExceptionHandler(PaymentServiceException.class)
     public ResponseEntity<ErrorResponse> handleBusinessErrors(
-            UserServiceException ex, HttpServletRequest request) {
+            PaymentServiceException ex, HttpServletRequest request) {
 
         log.warn("Business error occurred: {}", ex.getMessage());
 

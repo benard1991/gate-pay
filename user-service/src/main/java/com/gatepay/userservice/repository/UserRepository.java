@@ -21,7 +21,7 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     boolean existsByPhoneNumber(String phoneNumber);
 
-    @Modifying
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Transactional
     @Query("UPDATE User u SET u.password = :password WHERE u.email = :email")
     int updatePassword(@Param("email") String email, @Param("password") String password);

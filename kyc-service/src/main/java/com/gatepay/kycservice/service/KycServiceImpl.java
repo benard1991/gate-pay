@@ -128,6 +128,9 @@ public class KycServiceImpl implements KycService {
 
             kycNotificationProducer.sendKycNotification(message);
 
+            // clear lock after success so user can resubmit if needed
+            idempotencyService.clear(idempotencyKey);
+
             return kycDto;
 
         } catch (Exception ex) {
@@ -217,6 +220,7 @@ public class KycServiceImpl implements KycService {
             );
 
             kycNotificationProducer.sendKycNotification(message);
+
 
             return kycDto;
 

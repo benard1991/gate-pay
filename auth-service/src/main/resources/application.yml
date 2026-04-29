@@ -1,6 +1,6 @@
 spring:
   application:
-    name: auth-service
+    name: ${SPRING_APPLICATION_NAME:auth-service}
 
   data:
     redis:
@@ -15,9 +15,9 @@ spring:
 
 logging:
   level:
-    root: INFO
-    com.gatepay: DEBUG
-    org.springframework: INFO
+    root: ${LOG_LEVEL_ROOT:INFO}
+    com.gatepay: ${LOG_LEVEL_GATEPAY:DEBUG}
+    org.springframework: ${LOG_LEVEL_SPRING:INFO}
 
 server:
   port: ${SERVER_PORT:8081}
@@ -35,34 +35,46 @@ jwt:
   access-token-expiration-ms: ${JWT_ACCESS_EXP:1800000}
   refresh-token-expiration-ms: ${JWT_REFRESH_EXP:86400000}
 
-# Eureka client configuration
 eureka:
   client:
     service-url:
       defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
-    register-with-eureka: true
-    fetch-registry: true
+    register-with-eureka: ${EUREKA_REGISTER:true}
+    fetch-registry: ${EUREKA_FETCH_REGISTRY:true}
+    registry-fetch-interval-seconds: ${EUREKA_FETCH_INTERVAL:5}
+    eureka-server-connect-timeout-seconds: ${EUREKA_SERVER_CONNECT_TIMEOUT:10}
+    eureka-server-read-timeout-seconds: ${EUREKA_SERVER_READ_TIMEOUT:10}
+    initial-instance-info-replication-interval-seconds: ${EUREKA_REPLICATION_INTERVAL:5}
   instance:
     prefer-ip-address: true
+    health-check-url-path: /actuator/health
+    lease-renewal-interval-in-seconds: ${EUREKA_LEASE_RENEWAL_INTERVAL:10}
+    lease-expiration-duration-in-seconds: ${EUREKA_LEASE_EXPIRATION_DURATION:30}
 
-# Feign client configuration
 feign:
   client:
     config:
       default:
-        connectTimeout: 5000
-        readTimeout: 5000
+        connectTimeout: ${FEIGN_CONNECT_TIMEOUT:5000}
+        readTimeout: ${FEIGN_READ_TIMEOUT:5000}
 
 management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info, metrics
+  endpoint:
+    health:
+      show-details: always
   tracing:
     sampling:
-      probability: 1.0
+      probability: ${TRACING_SAMPLING_PROBABILITY:0.1}
   zipkin:
     tracing:
-      endpoint: http://zipkin:9411/api/v2/spans
+      endpoint: ${ZIPKIN_ENDPOINT:http://zipkin:9411/api/v2/spans}
 
-  springdoc:
-    api-docs:
-      path: /api-docs
-    swagger-ui:
-      path: /swagger-ui.html
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui.html

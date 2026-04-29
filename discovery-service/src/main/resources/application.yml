@@ -15,14 +15,16 @@ eureka:
   server:
     wait-time-in-ms-when-sync-empty: ${EUREKA_SERVER_WAIT_TIME_IN_MS_WHEN_SYNC_EMPTY:0}
     enable-self-preservation: ${EUREKA_SERVER_ENABLE_SELF_PRESERVATION:false}
-    peer-node-read-timeout-ms: ${EUREKA_SERVER_PEER_NODE_READ_TIMEOUT_MS:60000}
-    peer-node-connect-timeout-ms: ${EUREKA_SERVER_PEER_NODE_CONNECT_TIMEOUT_MS:60000}
-
+    peer-node-read-timeout-ms: ${EUREKA_SERVER_PEER_NODE_READ_TIMEOUT_MS:5000}
+    peer-node-connect-timeout-ms: ${EUREKA_SERVER_PEER_NODE_CONNECT_TIMEOUT_MS:5000}
+    eviction-interval-timer-in-ms: ${EUREKA_SERVER_EVICTION_INTERVAL:5000}
+    renewal-threshold-update-interval-ms: ${EUREKA_SERVER_RENEWAL_THRESHOLD_INTERVAL:60000}
+    response-cache-update-interval-ms: ${EUREKA_SERVER_RESPONSE_CACHE_INTERVAL:5000}
 
 management:
   tracing:
     sampling:
-      probability: 1.0
+      probability: 0.0
   zipkin:
     tracing:
-      endpoint: http://zipkin:9411/api/v2/spans
+      endpoint: ${ZIPKIN_ENDPOINT:http://zipkin:9411/api/v2/spans}

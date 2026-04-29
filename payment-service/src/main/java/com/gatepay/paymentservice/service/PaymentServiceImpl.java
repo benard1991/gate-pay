@@ -49,10 +49,7 @@ public class PaymentServiceImpl implements PaymentService {
 
     private static final Duration IDEMPOTENCY_TTL = Duration.ofMinutes(30);
 
-    // ======================================================
     // INITIALIZE PAYMENT
-    // ======================================================
-
     @Override
     @Transactional
     public PaymentResponse initializePayment(
@@ -63,16 +60,16 @@ public class PaymentServiceImpl implements PaymentService {
         log.info("Initializing payment | provider={} | ref={} | email={}",
                 provider, request.getReference(), request.getEmail());
 
-        // 1. Validate user
+        //  Validate user
         userValidationHelper.validateUserForPayment(request.getUserId());
 
-        // 2. Prepare request (reference, defaults, etc.)
+        // Prepare request (reference, defaults, etc.)
         paymentRequestHelper.prepareRequest(request);
 
         String reference = request.getReference();
 
         try {
-            // 3. FIRST: Check database before anything else
+            //  FIRST: Check database before anything else
             Optional<PaymentTransaction> existingTx =
                     transactionRepository.findByReference(reference);
 
@@ -86,14 +83,14 @@ public class PaymentServiceImpl implements PaymentService {
                 return response;
             }
 
-            // 4. Check Redis cache for completed response
+            // Check Redis cache for completed response
             Optional<String> cachedResponse = getCachedResponseSafely(reference);
             if (cachedResponse.isPresent()) {
                 log.info("Returning cached response | ref={}", reference);
                 return deserializeResponse(cachedResponse.get());
             }
 
-            // 5. Try to acquire lock
+            // Try to acquire lock
             if (!tryAcquireLockSafely(reference)) {
                 log.warn("Failed to acquire lock | ref={}", reference);
 
@@ -129,7 +126,7 @@ public class PaymentServiceImpl implements PaymentService {
 
             // Lock acquired successfully
             try {
-                // 6. Triple-check database after acquiring lock
+                // Triple-check database after acquiring lock
                 existingTx = transactionRepository.findByReference(reference);
                 if (existingTx.isPresent()) {
                     log.info("Transaction found after lock | ref={}", reference);
@@ -141,7 +138,7 @@ public class PaymentServiceImpl implements PaymentService {
                     return response;
                 }
 
-                // 7. Call payment provider
+                //  Call payment provider
                 PaymentResponse response = paymentContext.processPayment(provider, request);
 
                 if (!response.isSuccess()) {
@@ -149,7 +146,7 @@ public class PaymentServiceImpl implements PaymentService {
                     throw new PaymentException(response.getMessage());
                 }
 
-                // 8. Persist transaction with proper error handling
+                // Persist transaction with proper error handling
                 try {
                     persistNewTransaction(request, response, provider, ipAddress);
                 } catch (DataIntegrityViolationException e) {
@@ -170,7 +167,7 @@ public class PaymentServiceImpl implements PaymentService {
                     return existingResponse;
                 }
 
-                // 9. Cache successful response
+                //  Cache successful response
                 cacheResponseSafely(reference, response);
 
                 log.info("Payment initialized successfully | ref={}", reference);
@@ -205,9 +202,8 @@ public class PaymentServiceImpl implements PaymentService {
         }
     }
 
-    // ======================================================
+
     // HANDLE EXISTING TRANSACTION
-    // ======================================================
 
     private PaymentResponse handleExistingTransaction(
             PaymentTransaction tx,
@@ -238,9 +234,7 @@ public class PaymentServiceImpl implements PaymentService {
         };
     }
 
-    // ======================================================
     // RETRY FAILED TRANSACTION
-    // ======================================================
 
     private PaymentResponse retryFailedTransaction(
             PaymentTransaction tx,
@@ -285,9 +279,7 @@ public class PaymentServiceImpl implements PaymentService {
         }
     }
 
-    // ======================================================
     // PERSIST TRANSACTION
-    // ======================================================
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     protected void persistNewTransaction(
@@ -331,9 +323,8 @@ public class PaymentServiceImpl implements PaymentService {
         }
     }
 
-    // ======================================================
+
     // SAFE REDIS OPERATIONS
-    // ======================================================
 
     private boolean tryAcquireLockSafely(String reference) {
         try {
@@ -392,9 +383,7 @@ public class PaymentServiceImpl implements PaymentService {
                 .build();
     }
 
-    // ======================================================
     // VERIFY PAYMENT
-    // ======================================================
 
     @Override
     @Transactional
@@ -446,9 +435,8 @@ public class PaymentServiceImpl implements PaymentService {
         return response;
     }
 
-    // ======================================================
     // HELPER METHODS
-    // ======================================================
+
 
     private void updateTransaction(
             PaymentTransaction tx,
@@ -552,9 +540,8 @@ public class PaymentServiceImpl implements PaymentService {
 
 
 
-    // ======================================================
     // READ OPERATIONS
-    // ======================================================
+    
 
     @Override
     @Transactional(readOnly = true)

@@ -331,11 +331,7 @@ From the project root, run:
 mvn clean test
 ```
 
-This executes tests for every module in one shot. Before running integration tests, start the required dependencies:
-
-```bash
-docker compose up -d mysql-auth redis rabbitmq
-```
+This executes tests for every module in one shot. Before running integration tests, make sure Docker is running — Testcontainers will spin up the required containers automatically.
 
 ### Run tests for a specific service
 
@@ -352,6 +348,10 @@ mvn clean test -pl notification-service
 
 ```bash
 mvn clean test -pl auth-service -Dtest=OtpServiceImplIntegrationTest
+mvn clean test -pl user-service -Dtest=UserRepositoryIntegrationTest
+mvn clean test -pl user-service -Dtest=AdminRepositoryIntegrationTest
+mvn clean test -pl user-service -Dtest=OtpServiceIntegrationTest
+mvn clean test -pl user-service -Dtest=UserNotificationProducerIntegrationTest
 ```
 
 ### Test coverage status
@@ -359,11 +359,57 @@ mvn clean test -pl auth-service -Dtest=OtpServiceImplIntegrationTest
 | Service | Status |
 |---|---|
 | `auth-service` | ✅ Complete — unit and integration tests |
-| `user-service` | 🔲 Pending |
+| `user-service` | ✅ Complete — unit and integration tests |
 | `payment-service` | 🔲 Pending |
 | `wallet-service` | 🔲 Pending |
 | `kyc-service` | 🔲 Pending |
 | `notification-service` | 🔲 Pending |
+
+---
+
+### User Service — Test Coverage
+
+The user-service has full unit and integration test coverage across all layers. Integration tests use [Testcontainers](https://testcontainers.com) to spin up real Docker containers — no mocks, no in-memory databases.
+
+#### Integration Tests
+
+| Test Class | Infrastructure | What It Covers |
+|---|---|---|
+| `OtpServiceIntegrationTest` | Real Redis + Real MySQL | OTP generation, storage with TTL, verification, deletion, and replay prevention |
+| `UserRepositoryIntegrationTest` | Real MySQL + Flyway | Email lookup, eager role loading, phone existence check, and password update with cache invalidation |
+| `AdminRepositoryIntegrationTest` | Real MySQL + Flyway | Case-insensitive email lookup, eager role loading by id, paginated user listing, and full-text keyword search across name, email, and phone |
+| `UserNotificationProducerIntegrationTest` | Real RabbitMQ + Real MySQL | Message publishing to the correct exchange and routing key, payload validation for OTP email and password reset email |
+
+#### How integration tests work
+
+Every integration test class spins up its own isolated Docker containers via Testcontainers. There is no shared state between test runs — containers start fresh, Flyway runs all migrations against a clean database, and Redis and RabbitMQ are empty before each test class executes.
+
+```
+Test starts
+    ↓
+Testcontainers pulls and starts Docker containers (mysql:8.0, redis:7-alpine, rabbitmq:3.13-management-alpine)
+    ↓
+@DynamicPropertySource overrides Spring datasource and broker config with container ports
+    ↓
+Flyway runs all migrations against the fresh MySQL container
+    ↓
+Spring context starts with real infrastructure
+    ↓
+Tests run against real databases and real message broker
+    ↓
+Containers are stopped and removed automatically after the test run
+```
+
+> **Note:** Integration tests require Docker to be running. The first run will pull the required images (`mysql:8.0`, `redis:7-alpine`, `rabbitmq:3.13-management-alpine`). Subsequent runs are significantly faster since the images are cached locally.
+
+#### Unit Tests
+
+| Test Class | What It Covers |
+|---|---|
+| `UserServiceImplTest` | Registration, profile updates, role assignment, and error handling — all dependencies mocked |
+| `AdminServiceImplTest` | User search, pagination, status management, and admin operations — all dependencies mocked |
+| `UserControllerTest` | HTTP request/response contracts, input validation, and status codes via MockMvc |
+| `AdminControllerTest` | Admin endpoint contracts, pagination responses, and access control via MockMvc |
 
 ---
 

@@ -1,4 +1,4 @@
-package com.gatepay.userservice.exception;
+package com.gatepay.kycservice.exception;
 
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
@@ -34,41 +34,29 @@ public class GlobalExceptionHandler {
                 );
     }
 
-    // ============================ BUSINESS EXCEPTIONS ============================
-    @ExceptionHandler(UserServiceException.class)
+    @ExceptionHandler(KycServiceException.class)
     public ResponseEntity<ErrorResponse> handleBusinessErrors(
-            UserServiceException ex, HttpServletRequest request) {
+            KycServiceException ex, HttpServletRequest request) {
 
         log.warn("Business error occurred: {}", ex.getMessage());
 
-        return buildError(
-                ex.getErrorCode(),
-                ex.getMessage(),
-                request.getRequestURI()
-        );
+        return buildError(ex.getErrorCode(), ex.getMessage(), request.getRequestURI());
     }
 
-    // ============================ VALIDATION ERRORS =============================
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ErrorResponse> handleValidationErrors(
             MethodArgumentNotValidException ex, HttpServletRequest request) {
 
         Map<String, String> errors = new HashMap<>();
-
-        ex.getBindingResult().getFieldErrors().forEach(err -> {
-            errors.put(err.getField(), err.getDefaultMessage());
-        });
+        ex.getBindingResult().getFieldErrors().forEach(err ->
+                errors.put(err.getField(), err.getDefaultMessage())
+        );
 
         log.warn("Validation failed: {}", errors);
 
-        return buildError(
-                ErrorCode.VALIDATION_ERROR,
-                errors,
-                request.getRequestURI()
-        );
+        return buildError(ErrorCode.VALIDATION_ERROR, errors, request.getRequestURI());
     }
 
-    // ============================ MISSING REQUEST PARAMS =========================
     @ExceptionHandler(MissingServletRequestParameterException.class)
     public ResponseEntity<ErrorResponse> handleMissingParams(
             MissingServletRequestParameterException ex, HttpServletRequest request) {
@@ -82,7 +70,6 @@ public class GlobalExceptionHandler {
         );
     }
 
-    // ============================ TYPE MISMATCH ==================================
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
     public ResponseEntity<ErrorResponse> handleTypeMismatch(
             MethodArgumentTypeMismatchException ex, HttpServletRequest request) {
@@ -97,17 +84,12 @@ public class GlobalExceptionHandler {
         );
     }
 
-    // ============================ FALLBACK =======================================
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleUnexpected(
             Exception ex, HttpServletRequest request) {
 
         log.error("Unexpected error", ex);
 
-        return buildError(
-                ErrorCode.INTERNAL_ERROR,
-                "An unexpected error occurred",
-                request.getRequestURI()
-        );
+        return buildError(ErrorCode.INTERNAL_ERROR, "An unexpected error occurred", request.getRequestURI());
     }
 }

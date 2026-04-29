@@ -1,6 +1,6 @@
-package com.gatepay.authservice.service.otp;
+package com.gatepay.userservice.service.otp;
 
-import com.gatepay.authservice.exception.InvalidOtpException;
+import com.gatepay.userservice.exception.InvalidOtpException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -14,6 +14,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.containers.MySQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
@@ -22,26 +23,43 @@ import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-
 @SpringBootTest
-@ActiveProfiles("integration-test")
 @Testcontainers
-@DisplayName("OtpServiceImpl Integration Tests (real Redis)")
-class OtpServiceImplIntegrationTest {
+@ActiveProfiles("integration-test")
+@DisplayName("OtpService Integration Tests - user-service (real Redis + real MySQL)")
+class OtpServiceIntegrationTest {
 
-    @MockBean
-    private RabbitTemplate rabbitTemplate;
 
+    // Spin up a real MySQL so Flyway can run migrations and JPA can validate the schema.
+    // Without this the full Spring context won't start.
+    @Container
+    static MySQLContainer<?> mysql = new MySQLContainer<>(DockerImageName.parse("mysql:8.0"))
+            .withDatabaseName("test_db")
+            .withUsername("test")
+            .withPassword("test");
+
+    // This is what we're actually testing against — a real Redis instance.
     @Container
     static GenericContainer<?> redis = new GenericContainer<>(DockerImageName.parse("redis:7-alpine"))
             .withExposedPorts(6379);
 
-    // Only override Redis — everything else comes from your test application.yml
+    // Tell Spring to use the containers instead of whatever is in application.yml.
+    // Testcontainers assigns random ports so we have to resolve them at runtime like this.
     @DynamicPropertySource
-    static void redisProperties(DynamicPropertyRegistry registry) {
+    static void overrideProperties(DynamicPropertyRegistry registry) {
+        registry.add("spring.datasource.url",                  mysql::getJdbcUrl);
+        registry.add("spring.datasource.username",             mysql::getUsername);
+        registry.add("spring.datasource.password",             mysql::getPassword);
+        registry.add("spring.datasource.driver-class-name",   () -> "com.mysql.cj.jdbc.Driver");
+
         registry.add("spring.data.redis.host", redis::getHost);
         registry.add("spring.data.redis.port", () -> redis.getMappedPort(6379));
     }
+
+    // We don't have a RabbitMQ container here and we don't need one.
+    // Mocking it just stops Spring from complaining about a missing broker on startup.
+    @MockBean
+    private RabbitTemplate rabbitTemplate;
 
     @Autowired
     private OtpService otpService;
@@ -50,9 +68,10 @@ class OtpServiceImplIntegrationTest {
     private StringRedisTemplate redisTemplate;
 
     private static final String TEST_EMAIL = "test@example.com";
-    private static final String VALID_OTP = "123456";
+    private static final String VALID_OTP  = "123456";
     private static final String OTP_PREFIX = "otp:";
 
+    // Make sure each test starts with a clean slate so they don't affect each other.
     @BeforeEach
     void cleanRedis() {
         redisTemplate.delete(OTP_PREFIX + TEST_EMAIL);
@@ -66,19 +85,14 @@ class OtpServiceImplIntegrationTest {
         @DisplayName("Generates a 6-digit numeric OTP")
         void generates_six_digit_otp() {
             String otp = otpService.generateOtp();
-
-            assertThat(otp).hasSize(6);
-            assertThat(otp).containsOnlyDigits();
+            assertThat(otp).hasSize(6).containsOnlyDigits();
         }
 
         @Test
         @DisplayName("Produces valid OTPs on consecutive calls")
         void produces_valid_otps_on_consecutive_calls() {
-            String otp1 = otpService.generateOtp();
-            String otp2 = otpService.generateOtp();
-
-            assertThat(otp1).hasSize(6).containsOnlyDigits();
-            assertThat(otp2).hasSize(6).containsOnlyDigits();
+            assertThat(otpService.generateOtp()).hasSize(6).containsOnlyDigits();
+            assertThat(otpService.generateOtp()).hasSize(6).containsOnlyDigits();
         }
     }
 
@@ -90,9 +104,7 @@ class OtpServiceImplIntegrationTest {
         @DisplayName("Stores the OTP in Redis under the correct key")
         void stores_otp_in_redis_under_correct_key() {
             otpService.storeOtp(TEST_EMAIL, VALID_OTP, 5);
-
-            String stored = redisTemplate.opsForValue().get(OTP_PREFIX + TEST_EMAIL);
-            assertThat(stored).isEqualTo(VALID_OTP);
+            assertThat(redisTemplate.opsForValue().get(OTP_PREFIX + TEST_EMAIL)).isEqualTo(VALID_OTP);
         }
 
         @Test
@@ -101,10 +113,9 @@ class OtpServiceImplIntegrationTest {
             otpService.storeOtp(TEST_EMAIL, VALID_OTP, 5);
 
             Long ttl = redisTemplate.getExpire(OTP_PREFIX + TEST_EMAIL, TimeUnit.SECONDS);
-            assertThat(ttl)
-                    .isNotNull()
-                    .isGreaterThan(0)
-                    .isLessThanOrEqualTo(300);
+
+            // TTL should be set and somewhere under the 5-minute window we configured
+            assertThat(ttl).isNotNull().isGreaterThan(0).isLessThanOrEqualTo(300);
         }
 
         @Test
@@ -113,8 +124,7 @@ class OtpServiceImplIntegrationTest {
             otpService.storeOtp(TEST_EMAIL, "111111", 5);
             otpService.storeOtp(TEST_EMAIL, "999999", 5);
 
-            String stored = redisTemplate.opsForValue().get(OTP_PREFIX + TEST_EMAIL);
-            assertThat(stored).isEqualTo("999999");
+            assertThat(redisTemplate.opsForValue().get(OTP_PREFIX + TEST_EMAIL)).isEqualTo("999999");
         }
     }
 
@@ -127,9 +137,9 @@ class OtpServiceImplIntegrationTest {
         void returns_true_and_deletes_otp_when_code_is_correct() {
             otpService.storeOtp(TEST_EMAIL, VALID_OTP, 5);
 
-            boolean result = otpService.verifyOtp(TEST_EMAIL, VALID_OTP);
+            assertThat(otpService.verifyOtp(TEST_EMAIL, VALID_OTP)).isTrue();
 
-            assertThat(result).isTrue();
+            // Once verified the OTP must be gone — we don't want it usable again
             assertThat(redisTemplate.opsForValue().get(OTP_PREFIX + TEST_EMAIL)).isNull();
         }
 
@@ -141,6 +151,7 @@ class OtpServiceImplIntegrationTest {
             assertThatThrownBy(() -> otpService.verifyOtp(TEST_EMAIL, "wrong-otp"))
                     .isInstanceOf(InvalidOtpException.class);
 
+            // The real OTP should still be there so the user can try again
             assertThat(redisTemplate.opsForValue().get(OTP_PREFIX + TEST_EMAIL)).isEqualTo(VALID_OTP);
         }
 
@@ -155,9 +166,9 @@ class OtpServiceImplIntegrationTest {
         @DisplayName("Rejects reuse of an OTP that was already verified successfully")
         void rejects_otp_reuse_after_successful_verification() {
             otpService.storeOtp(TEST_EMAIL, VALID_OTP, 5);
-
             otpService.verifyOtp(TEST_EMAIL, VALID_OTP);
 
+            // Second attempt with the same code must fail — OTP should be single-use
             assertThatThrownBy(() -> otpService.verifyOtp(TEST_EMAIL, VALID_OTP))
                     .isInstanceOf(InvalidOtpException.class);
         }
@@ -179,7 +190,9 @@ class OtpServiceImplIntegrationTest {
         @Test
         @DisplayName("Does not throw when asked to delete an OTP that does not exist")
         void does_not_throw_when_deleting_nonexistent_otp() {
+            // Should be a silent no-op, not an exception
             otpService.deleteOtp("nonexistent@example.com");
         }
     }
+
 }
