@@ -42,14 +42,13 @@ public class TransactionServiceImpl implements TransactionService {
     private final WalletEventService          walletEventService;
     private final ObjectMapper                objectMapper;
 
-    // ─────────────────────────────────────────
+
     // CREDIT
-    // ─────────────────────────────────────────
     @Override
     @Transactional
     public WalletTransactionResponse credit(CreditWalletRequest request) {
 
-        // 1. Idempotency check
+        // Idempotency check
         String userId = String.valueOf(request.getUserId());
         var cached = idempotencyService.getProcessedResponse(
                 userId, request.getIdempotencyKey()
@@ -59,26 +58,26 @@ public class TransactionServiceImpl implements TransactionService {
             return deserialize(cached.get());
         }
 
-        // 2. Fetch wallet with optimistic lock
+        // Fetch wallet with optimistic lock
         Wallet wallet = walletRepository
                 .findByUserIdWithLock(request.getUserId())
                 .orElseThrow(() -> new WalletNotFoundException(
                         "Wallet not found for user: " + request.getUserId()
                 ));
 
-        // 3. Validate wallet status
+        // Validate wallet status
         validateWalletActive(wallet);
 
-        // 4. Record balances before update
+        // Record balances before update
         BigDecimal balanceBefore = wallet.getBalance();
         BigDecimal balanceAfter  = balanceBefore.add(request.getAmount());
 
-        // 5. Update wallet balance
+        //  Update wallet balance
         wallet.setBalance(balanceAfter);
         wallet.setLedgerBalance(balanceAfter);
         walletRepository.save(wallet);
 
-        // 6. Create transaction record
+        //  Create transaction record
         WalletTransaction transaction = WalletTransaction.builder()
                 .wallet(wallet)
                 .reference(generateReference())
@@ -96,27 +95,26 @@ public class TransactionServiceImpl implements TransactionService {
         log.info("Credit successful — userId: {} amount: {} ref: {}",
                 userId, request.getAmount(), saved.getReference());
 
-        // 7. Build response
+        //  Build response
         WalletTransactionResponse response = mapToResponse(saved);
 
-        // 8. Store in Redis for idempotency
+        //  Store in Redis for idempotency
         idempotencyService.storeResponse(userId, request.getIdempotencyKey(),
                 serialize(response));
 
-        // 9. Publish event
+        // Publish event
         walletEventService.publishCreditEvent(saved);
 
         return response;
     }
 
-    // ─────────────────────────────────────────
+
     // DEBIT
-    // ─────────────────────────────────────────
     @Override
     @Transactional
     public WalletTransactionResponse debit(DebitWalletRequest request) {
 
-        // 1. Idempotency check
+        //  Idempotency check
         String userId = String.valueOf(request.getUserId());
         var cached = idempotencyService.getProcessedResponse(
                 userId, request.getIdempotencyKey()
@@ -126,17 +124,17 @@ public class TransactionServiceImpl implements TransactionService {
             return deserialize(cached.get());
         }
 
-        // 2. Fetch wallet with optimistic lock
+        //  Fetch wallet with optimistic lock
         Wallet wallet = walletRepository
                 .findByUserIdWithLock(request.getUserId())
                 .orElseThrow(() -> new WalletNotFoundException(
                         "Wallet not found for user: " + request.getUserId()
                 ));
 
-        // 3. Validate wallet status
+        // Validate wallet status
         validateWalletActive(wallet);
 
-        // 4. Validate sufficient balance
+        //  Validate sufficient balance
         if (wallet.getBalance().compareTo(request.getAmount()) < 0) {
             throw new InsufficientBalanceException(
                     "Insufficient balance. Available: " + wallet.getBalance()
@@ -144,16 +142,16 @@ public class TransactionServiceImpl implements TransactionService {
             );
         }
 
-        // 5. Record balances before update
+        //  Record balances before update
         BigDecimal balanceBefore = wallet.getBalance();
         BigDecimal balanceAfter  = balanceBefore.subtract(request.getAmount());
 
-        // 6. Update wallet balance
+        // Update wallet balance
         wallet.setBalance(balanceAfter);
         wallet.setLedgerBalance(balanceAfter);
         walletRepository.save(wallet);
 
-        // 7. Create transaction record
+        // Create transaction record
         WalletTransaction transaction = WalletTransaction.builder()
                 .wallet(wallet)
                 .reference(generateReference())
@@ -171,34 +169,34 @@ public class TransactionServiceImpl implements TransactionService {
         log.info("Debit successful — userId: {} amount: {} ref: {}",
                 userId, request.getAmount(), saved.getReference());
 
-        // 8. Build response
+        //  Build response
         WalletTransactionResponse response = mapToResponse(saved);
 
-        // 9. Store in Redis for idempotency
+        // Store in Redis for idempotency
         idempotencyService.storeResponse(userId, request.getIdempotencyKey(),
                 serialize(response));
 
-        // 10. Publish event
+        //  Publish event
         walletEventService.publishDebitEvent(saved);
 
         return response;
     }
 
-    // ─────────────────────────────────────────
+
     // REVERSE
-    // ─────────────────────────────────────────
+
     @Override
     @Transactional
     public WalletTransactionResponse reverse(String reference) {
 
-        // 1. Find original transaction
+        //  Find original transaction
         WalletTransaction original = transactionRepository
                 .findByReference(reference)
                 .orElseThrow(() -> new TransactionNotFoundException(
                         "Transaction not found: " + reference
                 ));
 
-        // 2. Validate it can be reversed
+        //  Validate it can be reversed
         if (original.getStatus() == TransactionStatus.REVERSED) {
             throw new WalletServiceException(
                     ErrorCode.TRANSACTION_ALREADY_REVERSED,
@@ -209,7 +207,7 @@ public class TransactionServiceImpl implements TransactionService {
             throw new WalletServiceException(ErrorCode.TRANSACTION_NOT_REVERSIBLE);
         }
 
-        // 3. Fetch wallet with lock
+        //  Fetch wallet with lock
         Wallet wallet = walletRepository
                 .findByUserIdWithLock(original.getWallet().getUserId())
                 .orElseThrow(() -> new WalletNotFoundException(
@@ -219,7 +217,7 @@ public class TransactionServiceImpl implements TransactionService {
         BigDecimal balanceBefore = wallet.getBalance();
         BigDecimal balanceAfter;
 
-        // 4. Reverse the original transaction direction
+        // Reverse the original transaction direction
         if (original.getType() == TransactionType.CREDIT) {
             // Original was a credit → reverse with a debit
             if (wallet.getBalance().compareTo(original.getAmount()) < 0) {
@@ -233,16 +231,16 @@ public class TransactionServiceImpl implements TransactionService {
             balanceAfter = balanceBefore.add(original.getAmount());
         }
 
-        // 5. Update wallet balance
+        //  Update wallet balance
         wallet.setBalance(balanceAfter);
         wallet.setLedgerBalance(balanceAfter);
         walletRepository.save(wallet);
 
-        // 6. Mark original as reversed
+        //  Mark original as reversed
         original.setStatus(TransactionStatus.REVERSED);
         transactionRepository.save(original);
 
-        // 7. Create reversal transaction
+        //  Create reversal transaction
         WalletTransaction reversal = WalletTransaction.builder()
                 .wallet(wallet)
                 .reference(generateReference())
@@ -261,15 +259,13 @@ public class TransactionServiceImpl implements TransactionService {
         log.info("Reversal successful for reference: {} new ref: {}",
                 reference, saved.getReference());
 
-        // 8. Publish event
+        // Publish event
         walletEventService.publishReversalEvent(saved);
 
         return mapToResponse(saved);
     }
 
-    // ─────────────────────────────────────────
     // GET BY REFERENCE
-    // ─────────────────────────────────────────
     @Override
     @Transactional(readOnly = true)
     public WalletTransactionResponse getByReference(String reference) {
@@ -280,9 +276,9 @@ public class TransactionServiceImpl implements TransactionService {
                 ));
     }
 
-    // ─────────────────────────────────────────
+
     // GET TRANSACTIONS (FILTERED + PAGED)
-    // ─────────────────────────────────────────
+
     @Override
     @Transactional(readOnly = true)
     public PageResponse<WalletTransactionResponse> getTransactions(
@@ -320,9 +316,7 @@ public class TransactionServiceImpl implements TransactionService {
                 .build();
     }
 
-    // ─────────────────────────────────────────
 // GET ALL TRANSACTIONS (ADMIN)
-// ─────────────────────────────────────────
     @Override
     @Transactional(readOnly = true)
     public PageResponse<WalletTransactionResponse> getAllTransactions(AdminTransactionFilterRequest filter) {
@@ -352,9 +346,7 @@ public class TransactionServiceImpl implements TransactionService {
     }
 
 
-    // ─────────────────────────────────────────
     // HELPERS
-    // ─────────────────────────────────────────
     private void validateWalletActive(Wallet wallet) {
         if (wallet.getStatus() == WalletStatus.SUSPENDED) {
             throw new WalletServiceException(ErrorCode.WALLET_SUSPENDED);

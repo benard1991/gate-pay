@@ -90,13 +90,13 @@ services:
     restart: on-failure
     mem_limit: 512m
     environment:
-      - JAVA_OPTS=-Xms64m -Xmx384m -XX:+UseContainerSupport -XX:+UseG1GC -XX:MaxGCPauseMillis=200
+    - JAVA_OPTS=-Xms128m -Xmx512m -XX:+UseContainerSupport -XX:+UseG1GC -XX:MaxGCPauseMillis=200
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8082/actuator/health"]
       interval: 15s
       timeout: 10s
       retries: 10                # 10 retries × 15s = 150s of checks
-      start_period: 300s         # 5 min grace before checks even begin
+      start_period: 480s        # 5 min grace before checks even begin
 
   # ==============================
   # AUTH SERVICE

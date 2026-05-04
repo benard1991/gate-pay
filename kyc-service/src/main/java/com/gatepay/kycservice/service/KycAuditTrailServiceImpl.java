@@ -1,4 +1,4 @@
-package com.gatepay.kycservice.service.impl;
+package com.gatepay.kycservice.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -7,7 +7,6 @@ import com.gatepay.kycservice.exception.ErrorCode;
 import com.gatepay.kycservice.exception.KycServiceException;
 import com.gatepay.kycservice.model.KycAuditTrail;
 import com.gatepay.kycservice.repository.KycAuditTrailRepository;
-import com.gatepay.kycservice.service.KycAuditTrailService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 

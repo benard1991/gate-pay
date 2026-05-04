@@ -148,6 +148,13 @@ public class AdminServiceImpl implements AdminService {
     }
 
 
+    @Override
+    @Transactional
+    @Caching(evict = {
+            @CacheEvict(value = "userProfiles", key = "#userId"),
+            @CacheEvict(value = "adminUserById", key = "#userId"),
+            @CacheEvict(value = "adminUsers", allEntries = true)
+    })
     public AdminUserResponseDto updateKycVerified(Long userId, boolean kycVerified) {
         User user = adminRepository.findById(userId)
                 .orElseThrow(() -> new UserNotFoundException("User not found | id=" + userId));

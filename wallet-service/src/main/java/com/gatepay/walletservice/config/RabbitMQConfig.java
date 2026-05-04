@@ -29,9 +29,6 @@ public class RabbitMQConfig {
     @Value("${wallet.rabbitmq.routing-key.suspended:wallet.suspended}")
     private String suspendedRoutingKey;
 
-    @Value("${kyc.rabbitmq.queue.approved:kyc.approved.queue}")
-    private String kycApprovedQueue;
-
     // ─────────────────────────────────────────
     // DLQ EXCHANGE
     // ─────────────────────────────────────────
@@ -43,7 +40,7 @@ public class RabbitMQConfig {
     }
 
     // ─────────────────────────────────────────
-    // WALLET EXCHANGE
+    // WALLET MAIN EXCHANGE
     // ─────────────────────────────────────────
     @Bean
     public TopicExchange walletExchange() {
@@ -51,8 +48,9 @@ public class RabbitMQConfig {
     }
 
     // ─────────────────────────────────────────
-    // WALLET QUEUES + DLQ
+    // WALLET QUEUES
     // ─────────────────────────────────────────
+
     @Bean
     public Queue walletCreditQueue() {
         return QueueBuilder.durable("wallet.credit.queue")
@@ -144,29 +142,9 @@ public class RabbitMQConfig {
     }
 
     // ─────────────────────────────────────────
-    // KYC APPROVED QUEUE + DLQ (consumer only)
-    // ─────────────────────────────────────────
-    @Bean
-    public Queue kycApprovedQueue() {
-        return QueueBuilder.durable(kycApprovedQueue)
-                .withArgument("x-dead-letter-exchange", DLQ_EXCHANGE)
-                .withArgument("x-dead-letter-routing-key", "kyc.approved.dlq")
-                .build();
-    }
-
-    @Bean
-    public Queue kycApprovedDlq() {
-        return new Queue("kyc.approved.dlq", true);
-    }
-
-    @Bean
-    public Binding kycApprovedDlqBinding() {
-        return BindingBuilder.bind(kycApprovedDlq()).to(dlqExchange()).with("kyc.approved.dlq");
-    }
-
-    // ─────────────────────────────────────────
     // WALLET BINDINGS
     // ─────────────────────────────────────────
+
     @Bean
     public Binding creditBinding() {
         return BindingBuilder.bind(walletCreditQueue()).to(walletExchange()).with(creditRoutingKey);
@@ -193,8 +171,9 @@ public class RabbitMQConfig {
     }
 
     // ─────────────────────────────────────────
-    // JSON MESSAGE CONVERTER
+    // JSON CONVERTER
     // ─────────────────────────────────────────
+
     @Bean
     public Jackson2JsonMessageConverter messageConverter() {
         return new Jackson2JsonMessageConverter();

@@ -10,6 +10,6 @@ import java.util.Optional;
 public interface PaymentRepository extends JpaRepository<Payment, Long> {
     Optional<Payment> findByReference(String reference);
 
-    boolean existsByReference(String reference); // <- Add this
+    boolean existsByReference(String reference);
 
 }

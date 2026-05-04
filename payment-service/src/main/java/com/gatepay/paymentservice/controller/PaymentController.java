@@ -46,15 +46,24 @@ public class PaymentController {
 
 
     @PostMapping("/verifyPayment")
-    public ResponseEntity<VerifyPaymentResponse> verifyPayment(@RequestBody @Valid VerifyPaymentRequest provider, HttpServletRequest request) {
+    public ResponseEntity<VerifyPaymentResponse> verifyPayment(
+            @RequestBody @Valid VerifyPaymentRequest request,
+            HttpServletRequest httpRequest) {
+
         String performedBy = "SYSTEM";
+        String ipAddress = httpRequest.getRemoteAddr();
+        String userAgent = httpRequest.getHeader("User-Agent");
 
-        String ipAddress = request.getRemoteAddr();
-        String userAgent = request.getHeader("User-Agent");
+        VerifyPaymentResponse response = paymentService.verifyPayment(
+                request, performedBy, ipAddress, userAgent);
 
-        VerifyPaymentResponse response = paymentService.verifyPayment(provider,performedBy, ipAddress, userAgent);
+        if (response == null) {
+            return ResponseEntity.internalServerError().build();
+        }
 
-        return response.isSuccess() ? ResponseEntity.ok(response) : ResponseEntity.badRequest().body(response);
+        return response.isSuccess()
+                ? ResponseEntity.ok(response)
+                : ResponseEntity.badRequest().body(response);
     }
 
     @GetMapping("/{userId}/transactions")

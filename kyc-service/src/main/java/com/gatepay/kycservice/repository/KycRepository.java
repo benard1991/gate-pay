@@ -20,4 +20,7 @@ public interface KycRepository extends JpaRepository<KycRequest, Long> {
     boolean existsByNin(String nin);
     boolean existsByBvn(String bvn);
 
+    boolean existsByUserId(Long userId);
+
+
 }

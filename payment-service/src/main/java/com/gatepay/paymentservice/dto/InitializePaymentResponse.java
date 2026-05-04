@@ -21,10 +21,10 @@ public class InitializePaymentResponse {
     @NoArgsConstructor
     @AllArgsConstructor
     public static class DataObject {
-        @JsonProperty("authorization_url")  // ✅ Maps authorization_url from API to authorizationUrl in Java
+        @JsonProperty("authorization_url")  //  Maps authorization_url from API to authorizationUrl in Java
         private String authorizationUrl;
 
-        @JsonProperty("access_code")  // ✅ Maps access_code from API to accessCode in Java
+        @JsonProperty("access_code")  // Maps access_code from API to accessCode in Java
         private String accessCode;
 
         private String reference;

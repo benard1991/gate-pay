@@ -3,7 +3,6 @@ package com.gatepay.kycservice.controller;
 import com.gatepay.kycservice.dto.ApiResponse;
 import com.gatepay.kycservice.dto.KycRequestDto;
 import com.gatepay.kycservice.dto.KycRequestUploadDto;
-import com.gatepay.kycservice.service.IdempotencyService;
 import com.gatepay.kycservice.service.KycService;
 import com.gatepay.kycservice.util.IpUtil;
 import jakarta.servlet.http.HttpServletRequest;
@@ -20,7 +19,6 @@ import org.springframework.web.bind.annotation.*;
 public class KycController {
 
     private final KycService kycService;
-    private  final IdempotencyService idempotencyService;
 
 
 
@@ -70,13 +68,5 @@ public class KycController {
                 )
         );
     }
-
-    @PostMapping("/clear-resubmit-lock/{userId}")
-    public ResponseEntity<String> clearResubmitLock(@PathVariable("userId") Long userId) {
-        String key = "KYC:RESUBMIT:" + userId;
-        idempotencyService.clear(key);
-        return ResponseEntity.ok("Resubmit lock cleared for userId=" + userId);
-    }
-
 
 }

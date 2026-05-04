@@ -16,9 +16,9 @@ public class NotificationListener {
     private static final Logger logger = LoggerFactory.getLogger(NotificationListener.class);
     private final NotificationHandlerService handlerService;
 
-    /**
-     * Listens to notifications from the queue.
-     * If processing fails, an exception is thrown to trigger the DLQ/retry mechanism.
+    /*
+     Listens to notifications from the queue.
+     If processing fails, an exception is thrown to trigger the DLQ/retry mechanism.
      */
     @RabbitListener(
             queues = RabbitMQConfig.NOTIFICATION_QUEUE,

@@ -352,6 +352,16 @@ mvn clean test -pl user-service -Dtest=UserRepositoryIntegrationTest
 mvn clean test -pl user-service -Dtest=AdminRepositoryIntegrationTest
 mvn clean test -pl user-service -Dtest=OtpServiceIntegrationTest
 mvn clean test -pl user-service -Dtest=UserNotificationProducerIntegrationTest
+mvn clean test -pl kyc-service -Dtest=KycNotificationProducerIntegrationTest
+mvn clean test -pl kyc-service -Dtest=KycRepositoryIntegrationTest
+mvn clean test -pl payment-service -Dtest=PaymentTransactionRepositoryIntegrationTest
+mvn clean test -pl payment-service -Dtest=PaymentRepositoryIntegrationTest
+mvn clean test -pl payment-service -Dtest=PaymentEventProducerIntegrationTest
+mvn clean test -pl wallet-service -Dtest=IdempotencyServiceImplIntegrationTest
+mvn clean test -pl wallet-service -Dtest=TransactionServiceImplTest
+mvn clean test -pl notification-service -Dtest=NotificationHandlerServiceTest
+mvn clean test -pl notification-service -Dtest=NotificationListenerIntegrationTest
+mvn clean test -pl notification-service -Dtest=EmailStrategyTest
 ```
 
 ### Test coverage status
@@ -360,10 +370,12 @@ mvn clean test -pl user-service -Dtest=UserNotificationProducerIntegrationTest
 |---|---|
 | `auth-service` | ✅ Complete — unit and integration tests |
 | `user-service` | ✅ Complete — unit and integration tests |
-| `payment-service` | 🔲 Pending |
-| `wallet-service` | 🔲 Pending |
-| `kyc-service` | 🔲 Pending |
-| `notification-service` | 🔲 Pending |
+| `kyc-service` | ✅ Complete — unit and integration tests |
+| `payment-service` | ✅ Complete — unit and integration tests |
+| `wallet-service` | ✅ Complete — unit and integration tests |
+| `notification-service` | ✅ Complete — unit and integration tests |
+| `gateway-service` | — No custom logic to test |
+| `discovery-service` | — No custom logic to test |
 
 ---
 
@@ -410,6 +422,175 @@ Containers are stopped and removed automatically after the test run
 | `AdminServiceImplTest` | User search, pagination, status management, and admin operations — all dependencies mocked |
 | `UserControllerTest` | HTTP request/response contracts, input validation, and status codes via MockMvc |
 | `AdminControllerTest` | Admin endpoint contracts, pagination responses, and access control via MockMvc |
+
+---
+
+### KYC Service — Test Coverage
+
+The kyc-service has full unit and integration test coverage across all layers. Integration tests use [Testcontainers](https://testcontainers.com) to spin up real Docker containers — no mocks, no in-memory databases.
+
+#### Integration Tests
+
+| Test Class | Infrastructure | What It Covers |
+|---|---|---|
+| `KycNotificationProducerIntegrationTest` | Real RabbitMQ + Real MySQL + Real Redis | Message publishing to `notification-exchange` with correct routing key, KYC approved event publishing to `kyc.exchange`, JSON payload structure validation for both notification and approved event messages |
+| `KycRepositoryIntegrationTest` | Real MySQL + Flyway | KYC record persistence, status transitions, lookup by userId, and admin query filters |
+
+#### How integration tests work
+
+Every integration test class spins up its own isolated Docker containers via Testcontainers. There is no shared state between test runs — containers start fresh, Flyway runs all migrations against a clean database, and Redis and RabbitMQ are empty before each test class executes.
+
+```
+Test starts
+    ↓
+Testcontainers pulls and starts Docker containers (mysql:8.0, redis:7-alpine, rabbitmq:3.13-management-alpine)
+    ↓
+@DynamicPropertySource overrides Spring datasource and broker config with container ports
+    ↓
+TestRabbitConfig declares notification-exchange (DirectExchange) and kyc.exchange (TopicExchange)
+and binds the test queue to both so published messages are capturable
+    ↓
+Flyway runs all migrations against the fresh MySQL container
+    ↓
+Spring context starts with real infrastructure
+    ↓
+Tests run against real databases and real message broker
+    ↓
+Containers are stopped and removed automatically after the test run
+```
+
+> **Note:** Integration tests require Docker to be running. The first run will pull the required images (`mysql:8.0`, `redis:7-alpine`, `rabbitmq:3.13-management-alpine`). Subsequent runs are significantly faster since the images are cached locally.
+
+#### Unit Tests
+
+| Test Class | What It Covers |
+|---|---|
+| `KycServiceImplTest` | Document submission, Cloudinary upload, admin approval and rejection logic, status transitions, and error handling — all dependencies mocked |
+| `KycAdminServiceImplTest` | Admin review workflows, pagination, status filtering, and error handling — all dependencies mocked |
+| `KycControllerTest` | HTTP request/response contracts, document upload endpoints, admin approval and rejection workflows, and status codes via MockMvc |
+| `KycAdminControllerTest` | Admin endpoint contracts, pagination responses, and access control via MockMvc |
+
+---
+
+### Payment Service — Test Coverage
+
+The payment-service has full unit and integration test coverage across all layers. Integration tests use [Testcontainers](https://testcontainers.com) to spin up real Docker containers — no mocks, no in-memory databases.
+
+#### Integration Tests
+
+| Test Class | Infrastructure | What It Covers |
+|---|---|---|
+| `PaymentTransactionRepositoryIntegrationTest` | Real MySQL + Flyway | Transaction persistence, reference lookup, status filtering, paginated queries by customer email and user ID, pessimistic locking via `findByReferenceForUpdate`, and unique constraint enforcement |
+| `PaymentRepositoryIntegrationTest` | Real MySQL + Flyway | Payment persistence, reference lookup, existence check, unique reference constraint enforcement, and paginated result retrieval |
+| `PaymentEventProducerIntegrationTest` | Real RabbitMQ + Real MySQL + Flyway | Message publishing to `payment.exchange` with `payment.success` routing key, payload structure validation, correct reference and field verification, and graceful handling of empty payloads |
+
+#### How integration tests work
+
+Every integration test class spins up its own isolated Docker containers via Testcontainers. There is no shared state between test runs — containers start fresh, Flyway runs all migrations against a clean database, and RabbitMQ is empty before each test class executes.
+
+```
+Test starts
+    ↓
+Testcontainers pulls and starts Docker containers (mysql:8.0, rabbitmq:3.12-management)
+    ↓
+@DynamicPropertySource overrides Spring datasource and broker config with container ports
+    ↓
+Flyway runs all migrations against the fresh MySQL container
+    ↓
+Spring context starts with real infrastructure
+    ↓
+Tests run against real databases and real message broker
+    ↓
+Containers are stopped and removed automatically after the test run
+```
+
+> **Note:** Integration tests require Docker to be running. The first run will pull the required images (`mysql:8.0`, `rabbitmq:3.12-management`). Subsequent runs are significantly faster since the images are cached locally.
+
+#### Unit Tests
+
+| Test Class | What It Covers |
+|---|---|
+| `PaymentServiceImplTest` | Payment initiation, provider selection, Paystack and Flutterwave integration, webhook verification, idempotency checks, and error handling — all dependencies mocked |
+| `PaymentControllerTest` | HTTP request/response contracts, payment initiation endpoints, webhook handling, and status codes via MockMvc |
+
+---
+
+### Wallet Service — Test Coverage
+
+The wallet-service has full unit and integration test coverage across the idempotency and transaction layers. Integration tests use [Testcontainers](https://testcontainers.com) to spin up a real Redis instance — no mocks, no embedded stores.
+
+#### Integration Tests
+
+| Test Class | Infrastructure | What It Covers |
+|---|---|---|
+| `IdempotencyServiceImplIntegrationTest` | Real Redis | Response storage and retrieval, cache miss on unknown keys, `isAlreadyProcessed` before and after storage, key invalidation, per-user key isolation, overwrite behaviour on duplicate store calls, and safe no-op on invalidating a non-existent key |
+
+#### How integration tests work
+
+```
+Test starts
+    ↓
+Testcontainers pulls and starts Docker container (redis:7-alpine)
+    ↓
+@DynamicPropertySource overrides Spring Redis config with container host and port
+    ↓
+@DataRedisTest slice loads only Redis-related beans — JPA and Flyway are excluded
+    ↓
+@BeforeEach flushes all keys so each test starts with an empty store
+    ↓
+Tests run against a real Redis instance
+    ↓
+Container is stopped and removed automatically after the test run
+```
+
+> **Note:** `@DataRedisTest` is used instead of `@SpringBootTest` to keep the context lightweight. Only Redis beans are loaded — no database or Flyway involvement required.
+
+#### Unit Tests
+
+| Test Class | What It Covers |
+|---|---|
+| `TransactionServiceImplTest` | Credit and debit logic, balance calculations, idempotency checks, optimistic locking conflict handling, transaction history filtering, and error handling — all dependencies mocked |
+
+---
+
+### Notification Service — Test Coverage
+
+The notification-service has full unit and integration test coverage across all layers. Integration tests use [Testcontainers](https://testcontainers.com) to spin up a real RabbitMQ instance — no mocks, no embedded broker.
+
+#### Integration Tests
+
+| Test Class | Infrastructure | What It Covers |
+|---|---|---|
+| `NotificationListenerIntegrationTest` | Real RabbitMQ | End-to-end message consumption from `notification-exchange`, correct deserialization of `NotificationMessage` fields, failed message routing to `notification-queue.retry` on handler exception, DLQ routing after the 10-second retry TTL expires, successful messages never reaching retry or DLQ, and no spurious consumption when the queue is empty |
+
+#### How integration tests work
+
+```
+Test starts
+    ↓
+Testcontainers pulls and starts Docker container (rabbitmq:3.12-alpine)
+    ↓
+@DynamicPropertySource overrides Spring RabbitMQ config with container host and port
+    ↓
+@SpringBootTest loads the full application context including RabbitMQConfig
+    ↓
+NotificationHandlerService is replaced with a @MockBean so email dispatch is controlled per test
+    ↓
+Messages are published to notification-exchange via RabbitTemplate
+    ↓
+Awaitility polls assertions asynchronously — no fixed Thread.sleep calls
+    ↓
+Container is stopped and removed automatically after the test run
+```
+
+> **Note:** RabbitMQ 3.12 is used for integration tests rather than 3.13. Version 3.13 introduced the Khepri metadata store which takes 30+ seconds to initialise inside Docker on a constrained machine. Version 3.12 boots in under 5 seconds and covers all the messaging behaviour being tested.
+
+#### Unit Tests
+
+| Test Class | What It Covers |
+|---|---|
+| `NotificationHandlerServiceTest` | Strategy routing by notification type, case-insensitive type matching, correct strategy selected with no fanout to others, `IllegalArgumentException` on unknown type, and null type handling |
+| `EmailStrategyTest` | Recipient, subject, and body field mapping onto `SimpleMailMessage`, single `send` invocation per message, exception propagation on `JavaMailSender` failure, and send attempt on empty subject and body |
 
 ---
 
