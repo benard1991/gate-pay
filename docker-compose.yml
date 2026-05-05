@@ -332,7 +332,7 @@ services:
     mem_limit: 256m
     command: --innodb-buffer-pool-size=128M --performance-schema=OFF
     environment:
-      MYSQL_ROOT_PASSWORD: root
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: gatepay_user_service
     ports:
       - "3307:3306"
@@ -352,7 +352,7 @@ services:
     mem_limit: 256m
     command: --innodb-buffer-pool-size=128M --performance-schema=OFF
     environment:
-      MYSQL_ROOT_PASSWORD: root
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: gatepay_kyc_service
     ports:
       - "3308:3306"
@@ -372,7 +372,7 @@ services:
     mem_limit: 256m
     command: --innodb-buffer-pool-size=128M --performance-schema=OFF
     environment:
-      MYSQL_ROOT_PASSWORD: root
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: gatepay_payment_service
     ports:
       - "3309:3306"
@@ -392,7 +392,7 @@ services:
     mem_limit: 256m
     command: --innodb-buffer-pool-size=128M --performance-schema=OFF
     environment:
-      MYSQL_ROOT_PASSWORD: root
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: gatepay_wallet_service
     ports:
       - "3310:3306"
