@@ -4,6 +4,8 @@ import com.gatepay.paymentservice.dto.PaymentRequest;
 import com.gatepay.paymentservice.dto.PaymentResponse;
 import com.gatepay.paymentservice.dto.VerifyPaymentResponse;
 import com.gatepay.paymentservice.model.enums.PaymentProvider;
+import com.gatepay.paymentservice.service.PaymentStrategy;
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -18,10 +20,9 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class PaymentStrategyContext {
 
-    private final List<com.gatepay.paymentservice.service.PaymentStrategy> paymentStrategies;
+    private final List<PaymentStrategy> paymentStrategies;
 
-    private Map<String, com.gatepay.paymentservice.service.PaymentStrategy> strategyMap;
-
+    private Map<String, PaymentStrategy> strategyMap;
     /**
      * Initialize strategy map
      */
@@ -29,19 +30,17 @@ public class PaymentStrategyContext {
         if (strategyMap == null) {
             strategyMap = paymentStrategies.stream()
                     .collect(Collectors.toMap(
-                            com.gatepay.paymentservice.service.PaymentStrategy::getProviderName,
+                            PaymentStrategy::getProviderName,
                             Function.identity()
                     ));
         }
     }
 
-    /**
-     * Get strategy by provider name
-     */
-    public com.gatepay.paymentservice.service.PaymentStrategy getStrategy(String providerName) {
+
+    public PaymentStrategy getStrategy(String providerName) {
         initializeStrategyMap();
 
-        com.gatepay.paymentservice.service.PaymentStrategy strategy = strategyMap.get(providerName.toUpperCase());
+       PaymentStrategy strategy = strategyMap.get(providerName.toUpperCase());
         if (strategy == null) {
             throw new IllegalArgumentException("Unsupported payment provider: " + providerName);
         }
@@ -51,7 +50,7 @@ public class PaymentStrategyContext {
     /**
      * Get strategy by provider enum
      */
-    public com.gatepay.paymentservice.service.PaymentStrategy getStrategy(PaymentProvider provider) {
+    public PaymentStrategy getStrategy(PaymentProvider provider) {
         return getStrategy(provider.name());
     }
 
@@ -61,7 +60,7 @@ public class PaymentStrategyContext {
     public PaymentResponse processPayment(PaymentProvider provider, PaymentRequest request) {
         log.info("Processing payment with provider: {}", provider);
 
-        com.gatepay.paymentservice.service.PaymentStrategy strategy = getStrategy(provider);
+        PaymentStrategy strategy = getStrategy(provider);
 
         // Check if provider supports the currency
         if (!strategy.supportsCurrency(request.getCurrency())) {

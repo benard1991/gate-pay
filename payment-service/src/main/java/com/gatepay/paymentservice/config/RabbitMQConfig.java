@@ -65,6 +65,8 @@ public class RabbitMQConfig {
     public RabbitTemplate rabbitTemplate(ConnectionFactory connectionFactory) {
         RabbitTemplate template = new RabbitTemplate(connectionFactory);
         template.setMessageConverter(messageConverter());
+        // so we get the message back if nothing is bound to the routing key
+        template.setMandatory(true);
         return template;
     }
 

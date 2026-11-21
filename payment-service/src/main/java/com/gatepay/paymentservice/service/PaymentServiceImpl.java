@@ -11,7 +11,8 @@ import com.gatepay.paymentservice.model.AuditLog;
 import com.gatepay.paymentservice.model.Payment;
 import com.gatepay.paymentservice.model.PaymentTransaction;
 import com.gatepay.paymentservice.model.enums.*;
-import com.gatepay.paymentservice.producer.PaymentEventProducer;
+import com.gatepay.paymentservice.config.RabbitMQConfig;
+import com.gatepay.paymentservice.outbox.OutboxService;
 import com.gatepay.paymentservice.repository.AuditLogRepository;
 import com.gatepay.paymentservice.repository.PaymentRepository;
 import com.gatepay.paymentservice.repository.PaymentTransactionRepository;
@@ -44,7 +45,7 @@ public class PaymentServiceImpl implements PaymentService {
     private final PaymentRequestHelper paymentRequestHelper;
     private final IdempotencyService idempotencyService;
     private final ObjectMapper objectMapper;
-    private final PaymentEventProducer paymentEventProducer; // ← add this
+    private final OutboxService outboxService;
 
 
     private static final Duration IDEMPOTENCY_TTL = Duration.ofMinutes(30);
@@ -425,7 +426,7 @@ public class PaymentServiceImpl implements PaymentService {
 
         if (newStatus == TransactionStatus.SUCCESS) {
             createPaymentRecordIfAbsent(tx, provider);
-            publishPaymentSuccessEvent(tx);
+            recordPaymentSuccessEvent(tx);
         }
 
         saveAuditLog(tx, performedBy, ipAddress, userAgent, oldData, newStatus);
@@ -520,28 +521,29 @@ public class PaymentServiceImpl implements PaymentService {
         };
     }
 
-    private void publishPaymentSuccessEvent(PaymentTransaction tx) {
-        try {
-            Map<String, Object> payload = Map.of(
-                    "userId",    tx.getUserId(),
-                    "amount",    tx.getAmount(),
-                    "reference", tx.getReference(),
-                    "currency",  tx.getCurrency(),
-                    "event",     "PAYMENT_SUCCESS"
-            );
-            paymentEventProducer.sendPaymentSuccessEvent(payload);
-            log.info("Payment success event published | ref={} | userId={}",
-                    tx.getReference(), tx.getUserId());
-        } catch (Exception e) {
-            log.error("Failed to publish payment success event | ref={} | error={}",
-                    tx.getReference(), e.getMessage());
-        }
+    // Saved to the outbox in the same transaction as the status update.
+    // OutboxPublisher sends it to RabbitMQ after commit.
+    private void recordPaymentSuccessEvent(PaymentTransaction tx) {
+        Map<String, Object> payload = Map.of(
+                "userId", tx.getUserId(),
+                "amount", tx.getAmount(),
+                "reference", tx.getReference(),
+                "currency", tx.getCurrency(),
+                "event", "PAYMENT_SUCCESS"
+        );
+        outboxService.save(
+                "PaymentTransaction",
+                tx.getReference(),
+                "PAYMENT_SUCCESS",
+                RabbitMQConfig.PAYMENT_SUCCESS_EXCHANGE,
+                RabbitMQConfig.PAYMENT_SUCCESS_ROUTING_KEY,
+                payload
+        );
     }
 
 
-
     // READ OPERATIONS
-    
+
 
     @Override
     @Transactional(readOnly = true)

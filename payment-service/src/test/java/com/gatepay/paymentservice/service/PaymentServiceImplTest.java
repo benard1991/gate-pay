@@ -13,7 +13,7 @@ import com.gatepay.paymentservice.model.Payment;
 import com.gatepay.paymentservice.model.PaymentTransaction;
 import com.gatepay.paymentservice.model.enums.PaymentProvider;
 import com.gatepay.paymentservice.model.enums.TransactionStatus;
-import com.gatepay.paymentservice.producer.PaymentEventProducer;
+import com.gatepay.paymentservice.outbox.OutboxService;
 import com.gatepay.paymentservice.repository.AuditLogRepository;
 import com.gatepay.paymentservice.repository.PaymentRepository;
 import com.gatepay.paymentservice.repository.PaymentTransactionRepository;
@@ -52,7 +52,7 @@ class PaymentServiceImplTest {
     @Mock private PaymentRequestHelper paymentRequestHelper;
     @Mock private IdempotencyService idempotencyService;
     @Mock private ObjectMapper objectMapper;
-    @Mock private PaymentEventProducer paymentEventProducer;
+    @Mock private OutboxService outboxService;
 
     @InjectMocks
     private PaymentServiceImpl paymentService;
@@ -366,7 +366,8 @@ class PaymentServiceImplTest {
             assertThat(result.isSuccess()).isTrue();
             verify(transactionRepository).save(tx);
             assertThat(tx.getStatus()).isEqualTo(TransactionStatus.SUCCESS);
-            verify(paymentEventProducer).sendPaymentSuccessEvent(any());
+            verify(outboxService).save(eq("PaymentTransaction"), eq("REF-001"), eq("PAYMENT_SUCCESS"),
+                    eq("payment.exchange"), eq("payment.success"), any());
             verify(auditLogRepository).save(any(AuditLog.class));
         }
 
@@ -388,7 +389,7 @@ class PaymentServiceImplTest {
 
             assertThat(result).isNotNull();
             verify(transactionRepository, never()).save(any());
-            verify(paymentEventProducer, never()).sendPaymentSuccessEvent(any());
+            verify(outboxService, never()).save(any(), any(), any(), any(), any(), any());
         }
 
         @Test
@@ -408,7 +409,7 @@ class PaymentServiceImplTest {
             );
 
             assertThat(tx.getStatus()).isEqualTo(TransactionStatus.FAILED);
-            verify(paymentEventProducer, never()).sendPaymentSuccessEvent(any());
+            verify(outboxService, never()).save(any(), any(), any(), any(), any(), any());
             verify(auditLogRepository).save(any(AuditLog.class));
         }
 
@@ -429,7 +430,7 @@ class PaymentServiceImplTest {
             );
 
             assertThat(tx.getStatus()).isEqualTo(TransactionStatus.PENDING);
-            verify(paymentEventProducer, never()).sendPaymentSuccessEvent(any());
+            verify(outboxService, never()).save(any(), any(), any(), any(), any(), any());
         }
 
         @Test
