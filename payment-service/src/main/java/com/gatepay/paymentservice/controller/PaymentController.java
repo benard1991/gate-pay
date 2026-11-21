@@ -8,6 +8,9 @@ import com.gatepay.paymentservice.model.enums.TransactionType;
 import com.gatepay.paymentservice.service.PaymentService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import com.gatepay.paymentservice.security.CallerIdentity;
+import com.gatepay.paymentservice.exception.ErrorCode;
+import com.gatepay.paymentservice.exception.PaymentServiceException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -32,6 +35,8 @@ public class PaymentController {
             @RequestParam("provider") PaymentProvider provider,
             @RequestBody PaymentRequest request,
             HttpServletRequest httpRequest) {
+        // you can only start a payment for your own account
+        CallerIdentity.requireSelf(request.getUserId());
 
         PaymentResponse response = paymentService.initializePayment(
                 request,
@@ -78,6 +83,10 @@ public class PaymentController {
             @RequestParam(name = "page", defaultValue = "0") int page,
             @RequestParam(name = "size", defaultValue = "20") int size
     ) {
+        // userId is a String in this API; anything that isn't the caller's own id is refused
+        if (!String.valueOf(CallerIdentity.currentUserId()).equals(userId)) {
+            throw new PaymentServiceException(ErrorCode.ACCESS_DENIED, "You can only access your own account");
+        }
 
         TransactionFilter filter = new TransactionFilter();
         filter.setStatus(status);

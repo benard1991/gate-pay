@@ -322,6 +322,18 @@ public class TransactionServiceImpl implements TransactionService {
     }
 
 
+    // Same "not found" for someone else's transaction, so references can't be probed
+    @Override
+    @Transactional(readOnly = true)
+    public WalletTransactionResponse getByReferenceForUser(String reference, Long userId) {
+        return transactionRepository.findByReference(reference)
+                .filter(tx -> tx.getWallet().getUserId().equals(userId))
+                .map(this::mapToResponse)
+                .orElseThrow(() -> new TransactionNotFoundException(
+                        "Transaction not found: " + reference
+                ));
+    }
+
     // GET TRANSACTIONS (FILTERED + PAGED)
 
     @Override

@@ -8,6 +8,16 @@ import java.util.stream.Collectors;
 
 public class UserMapper {
 
+    // Includes the password hash. Only for the internal credentials lookup used by auth-service.
+    public static UserDto toCredentialsDto(User user) {
+        UserDto dto = toDto(user);
+        if (dto != null) {
+            dto.setPassword(user.getPassword());
+        }
+        return dto;
+    }
+
+    // Never includes the password hash
     public static UserDto toDto(User user) {
         if (user == null) return null;
 
@@ -16,7 +26,6 @@ public class UserMapper {
         dto.setFirstName(user.getFirstName());
         dto.setLastName(user.getLastName());
         dto.setEmail(user.getEmail());
-        dto.setPassword(user.getPassword()); // you can remove if you don't want to expose
         dto.setPhoneNumber(user.getPhoneNumber());
         dto.setAddress(user.getAddress());
         dto.setCountry(user.getCountry());

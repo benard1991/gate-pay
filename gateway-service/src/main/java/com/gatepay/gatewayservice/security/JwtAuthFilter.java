@@ -27,8 +27,20 @@ public class JwtAuthFilter implements WebFilter {
         this.gatewayProperties = gatewayProperties;
     }
 
+    // Identity headers are only trusted because the gateway sets them. Remove any
+    // copies the client sent so they can't impersonate another user.
+    public static final String USER_ID_HEADER  = "X-User-Id";
+    public static final String USERNAME_HEADER = "X-Username";
+
     @Override
-    public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
+    public Mono<Void> filter(ServerWebExchange incoming, WebFilterChain chain) {
+        ServerWebExchange exchange = incoming.mutate()
+                .request(r -> r.headers(h -> {
+                    h.remove(USER_ID_HEADER);
+                    h.remove(USERNAME_HEADER);
+                }))
+                .build();
+
         String path = normalizePath(exchange.getRequest().getPath().value());
 
         // Skip public paths
@@ -50,6 +62,13 @@ public class JwtAuthFilter implements WebFilter {
             return chain.filter(exchange);
         }
 
+        // Tokens without a user id (refresh tokens, or access tokens issued before
+        // uid was added) are not accepted; the client has to log in again.
+        Long userId = jwtUtil.extractUserId(token);
+        if (userId == null) {
+            return chain.filter(exchange);
+        }
+
         // Extract username and roles
         String username = jwtUtil.extractUsername(token);
         List<String> roles = jwtUtil.extractRoles(token);
@@ -65,7 +84,8 @@ public class JwtAuthFilter implements WebFilter {
         // Inject X-Username header for downstream services
         ServerWebExchange mutatedExchange = exchange.mutate()
                 .request(exchange.getRequest().mutate()
-                        .header("X-Username", username)
+                        .header(USERNAME_HEADER, username)
+                        .header(USER_ID_HEADER, String.valueOf(userId))
                         .build())
                 .build();
 

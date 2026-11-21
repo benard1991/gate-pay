@@ -23,6 +23,7 @@ public enum ErrorCode {
     TRANSACTION_ALREADY_REVERSED("TXN_003", "Transaction has already been reversed", HttpStatus.CONFLICT),
     TRANSACTION_NOT_REVERSIBLE("TXN_004", "Only successful transactions can be reversed", HttpStatus.UNPROCESSABLE_ENTITY),
     DUPLICATE_TRANSACTION("TXN_005", "Duplicate transaction detected", HttpStatus.CONFLICT),
+    ACCESS_DENIED("WAL_403", "You can only access your own resources", HttpStatus.FORBIDDEN),
     CONCURRENT_UPDATE("TXN_006", "Wallet was updated concurrently, please retry", HttpStatus.CONFLICT),
 
     // Idempotency

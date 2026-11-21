@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gatepay.userservice.config.SecurityConfig;
 import com.gatepay.userservice.dto.*;
 import com.gatepay.userservice.enums.AccountStatus;
+import com.gatepay.userservice.service.AdminService;
 import com.gatepay.userservice.service.UserService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -23,7 +24,7 @@ import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@WebMvcTest(UserController.class)
+@WebMvcTest({UserController.class, InternalUserController.class})
 @Import(SecurityConfig.class)
 @DisplayName("UserController Tests")
 class UserControllerTest {
@@ -33,6 +34,9 @@ class UserControllerTest {
 
     @MockBean
     private UserService userService;
+
+    @MockBean
+    private AdminService adminService;
 
     @Autowired
     private ObjectMapper objectMapper;
@@ -57,15 +61,15 @@ class UserControllerTest {
     // GET /users?email=
 
     @Nested
-    @DisplayName("GET /users - getUserByEmail")
+    @DisplayName("GET /internal/users/credentials - credentials lookup for auth-service")
     class GetUserByEmail {
 
         @Test
         @DisplayName("Returns the user when a matching email is found")
         void returns_user_when_email_exists() throws Exception {
-            when(userService.getUserByEmail("john.doe@example.com")).thenReturn(sampleUserDto);
+            when(userService.getUserCredentialsByEmail("john.doe@example.com")).thenReturn(sampleUserDto);
 
-            mockMvc.perform(get("/users")
+            mockMvc.perform(get("/internal/users/credentials")
                             .param("email", "john.doe@example.com"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.status").value(200))
@@ -74,13 +78,13 @@ class UserControllerTest {
                     .andExpect(jsonPath("$.data.firstName").value("John"))
                     .andExpect(jsonPath("$.data.lastName").value("Doe"));
 
-            verify(userService, times(1)).getUserByEmail("john.doe@example.com");
+            verify(userService, times(1)).getUserCredentialsByEmail("john.doe@example.com");
         }
 
         @Test
         @DisplayName("Fails with 400 when the email query param is missing")
         void fails_when_email_param_is_not_provided() throws Exception {
-            mockMvc.perform(get("/users"))
+            mockMvc.perform(get("/internal/users/credentials"))
                     .andExpect(status().isBadRequest());
         }
     }
@@ -96,7 +100,7 @@ class UserControllerTest {
         void returns_user_profile_for_valid_user_id() throws Exception {
             when(userService.getUserProfile(1L)).thenReturn(sampleUserDto);
 
-            mockMvc.perform(get("/users/1/profile"))
+            mockMvc.perform(get("/users/1/profile").header("X-User-Id", "1"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.status").value(200))
                     .andExpect(jsonPath("$.message").value("User fetched successfully"))
@@ -219,14 +223,14 @@ class UserControllerTest {
         }
 
         @Test
-        @DisplayName("Fails with 400 when roles list is null")
-        void fails_when_roles_are_null() throws Exception {
+        @DisplayName("Accepts registration without roles, since the server assigns them")
+        void accepts_when_roles_are_null() throws Exception {
             validUserDto.setRoles(null);
 
             mockMvc.perform(post("/users/register")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(validUserDto)))
-                    .andExpect(status().isBadRequest());
+                    .andExpect(status().isOk());
         }
     }
 
@@ -250,7 +254,7 @@ class UserControllerTest {
         void resets_password_and_returns_success_message() throws Exception {
             when(userService.updatePassword("john.doe@example.com", "newSecret123")).thenReturn(true);
 
-            mockMvc.perform(put("/users/reset-password")
+            mockMvc.perform(put("/internal/users/reset-password")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(validRequest)))
                     .andExpect(status().isOk())
@@ -265,7 +269,7 @@ class UserControllerTest {
         void returns_500_when_password_update_fails() throws Exception {
             when(userService.updatePassword(anyString(), anyString())).thenReturn(false);
 
-            mockMvc.perform(put("/users/reset-password")
+            mockMvc.perform(put("/internal/users/reset-password")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(validRequest)))
                     .andExpect(status().isInternalServerError())
@@ -278,7 +282,7 @@ class UserControllerTest {
         void fails_when_email_is_blank() throws Exception {
             validRequest.setEmail("");
 
-            mockMvc.perform(put("/users/reset-password")
+            mockMvc.perform(put("/internal/users/reset-password")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(validRequest)))
                     .andExpect(status().isBadRequest());
@@ -289,7 +293,7 @@ class UserControllerTest {
         void fails_when_email_format_is_invalid() throws Exception {
             validRequest.setEmail("bad-email");
 
-            mockMvc.perform(put("/users/reset-password")
+            mockMvc.perform(put("/internal/users/reset-password")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(validRequest)))
                     .andExpect(status().isBadRequest());
@@ -300,7 +304,7 @@ class UserControllerTest {
         void fails_when_new_password_is_blank() throws Exception {
             validRequest.setNewPassword("");
 
-            mockMvc.perform(put("/users/reset-password")
+            mockMvc.perform(put("/internal/users/reset-password")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(validRequest)))
                     .andExpect(status().isBadRequest());
@@ -330,6 +334,7 @@ class UserControllerTest {
             when(userService.changePassword(any(ChangePasswordRequest.class))).thenReturn(true);
 
             mockMvc.perform(put("/users/change-password")
+                            .header("X-Username", "john.doe@example.com")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(validRequest)))
                     .andExpect(status().isOk())
@@ -423,7 +428,7 @@ class UserControllerTest {
 
             when(userService.updateUserProfile(eq(1L), any(UpdateUserDto.class))).thenReturn(updatedUser);
 
-            mockMvc.perform(put("/users/1/profile")
+            mockMvc.perform(put("/users/1/profile").header("X-User-Id", "1")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(validUpdateDto)))
                     .andExpect(status().isOk())
@@ -464,11 +469,59 @@ class UserControllerTest {
 
             when(userService.updateUserProfile(eq(1L), any(UpdateUserDto.class))).thenReturn(updatedUser);
 
-            mockMvc.perform(put("/users/1/profile")
+            mockMvc.perform(put("/users/1/profile").header("X-User-Id", "1")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(partialUpdate)))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.firstName").value("PartialFirst"));
+        }
+    }
+
+    @Nested
+    @DisplayName("Ownership: a user can only act on their own account")
+    class Ownership {
+
+        @Test
+        @DisplayName("403 when reading another user's profile")
+        void cannot_read_another_users_profile() throws Exception {
+            mockMvc.perform(get("/users/2/profile").header("X-User-Id", "1"))
+                    .andExpect(status().isForbidden());
+            verify(userService, never()).getUserProfile(any());
+        }
+
+        @Test
+        @DisplayName("403 when the request did not come through the gateway (no identity header)")
+        void rejects_request_without_identity() throws Exception {
+            mockMvc.perform(get("/users/1/profile"))
+                    .andExpect(status().isForbidden());
+            verify(userService, never()).getUserProfile(any());
+        }
+
+        @Test
+        @DisplayName("403 when updating another user's profile")
+        void cannot_update_another_users_profile() throws Exception {
+            mockMvc.perform(put("/users/2/profile").header("X-User-Id", "1")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"firstName\":\"Mallory\"}"))
+                    .andExpect(status().isForbidden());
+            verify(userService, never()).updateUserProfile(any(), any());
+        }
+
+        @Test
+        @DisplayName("403 when changing another user's password")
+        void cannot_change_another_users_password() throws Exception {
+            ChangePasswordRequest request = new ChangePasswordRequest();
+            request.setEmail("victim@example.com");
+            request.setOldPassword("guess123");
+            request.setNewPassword("newSecret123");
+            request.setConfirmPassword("newSecret123");
+
+            mockMvc.perform(put("/users/change-password")
+                            .header("X-Username", "attacker@example.com")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(request)))
+                    .andExpect(status().isForbidden());
+            verify(userService, never()).changePassword(any());
         }
     }
 }

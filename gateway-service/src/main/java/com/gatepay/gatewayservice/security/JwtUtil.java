@@ -35,6 +35,12 @@ public class JwtUtil {
         return Collections.emptyList();
     }
 
+    // null for tokens issued before uid was added, and for refresh tokens
+    public Long extractUserId(String token) {
+        Object uid = extractClaims(token).get("uid");
+        return uid instanceof Number n ? n.longValue() : null;
+    }
+
     public boolean validateToken(String token) {
         try {
             Claims claims = extractClaims(token);

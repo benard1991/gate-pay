@@ -106,7 +106,7 @@ class PaymentControllerTest {
             when(paymentService.initializePayment(any(), any(), any()))
                     .thenReturn(successPaymentResponse);
 
-            mockMvc.perform(post("/payments/initializePayment")
+            mockMvc.perform(post("/payments/initializePayment").header("X-User-Id", "1")
                             .param("provider", "PAYSTACK")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(validPaymentRequest)))
@@ -119,7 +119,7 @@ class PaymentControllerTest {
             when(paymentService.initializePayment(any(), any(), any()))
                     .thenReturn(failedPaymentResponse);
 
-            mockMvc.perform(post("/payments/initializePayment")
+            mockMvc.perform(post("/payments/initializePayment").header("X-User-Id", "1")
                             .param("provider", "PAYSTACK")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(validPaymentRequest)))
@@ -132,7 +132,7 @@ class PaymentControllerTest {
             when(paymentService.initializePayment(any(), any(), eq("192.168.1.1")))
                     .thenReturn(successPaymentResponse);
 
-            mockMvc.perform(post("/payments/initializePayment")
+            mockMvc.perform(post("/payments/initializePayment").header("X-User-Id", "1")
                             .param("provider", "PAYSTACK")
                             .header("X-Forwarded-For", "192.168.1.1, 10.0.0.1")
                             .contentType(MediaType.APPLICATION_JSON)
@@ -211,9 +211,36 @@ class PaymentControllerTest {
             when(paymentService.fetchUserTransactionsByUserId(any(), any(), anyInt(), anyInt()))
                     .thenReturn(page);
 
-            mockMvc.perform(get("/payments/101/transactions"))
+            mockMvc.perform(get("/payments/101/transactions").header("X-User-Id", "101"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.content.length()").value(1));
+        }
+    }
+
+    @Nested
+    class Ownership {
+
+        @Test
+        void should_return_403_when_paying_for_another_user() throws Exception {
+            mockMvc.perform(post("/payments/initializePayment").header("X-User-Id", "2")
+                            .param("provider", "PAYSTACK")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(validPaymentRequest)))
+                    .andExpect(status().isForbidden());
+            verify(paymentService, never()).initializePayment(any(), any(), any());
+        }
+
+        @Test
+        void should_return_403_when_listing_another_users_transactions() throws Exception {
+            mockMvc.perform(get("/payments/101/transactions").header("X-User-Id", "2"))
+                    .andExpect(status().isForbidden());
+            verify(paymentService, never()).fetchUserTransactionsByUserId(any(), any(), anyInt(), anyInt());
+        }
+
+        @Test
+        void should_return_403_without_gateway_identity() throws Exception {
+            mockMvc.perform(get("/payments/101/transactions"))
+                    .andExpect(status().isForbidden());
         }
     }
 }

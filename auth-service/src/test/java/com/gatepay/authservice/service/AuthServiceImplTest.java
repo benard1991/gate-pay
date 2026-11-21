@@ -12,6 +12,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
+import com.gatepay.authservice.security.OtpExposurePolicy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
@@ -19,6 +21,9 @@ import java.time.Instant;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -40,6 +45,7 @@ class AuthServiceImplTest {
     @Mock private JwtService               jwtService;
     @Mock private OtpService               otpService;
     @Mock private AuthNotificationProducer notificationProducer;
+    @Spy  private OtpExposurePolicy        otpExposurePolicy = new OtpExposurePolicy(false);
 
     @InjectMocks
     private AuthServiceImpl authService;
@@ -72,10 +78,27 @@ class AuthServiceImplTest {
 
             LoginOtpResponse response = authService.initiateLogin(buildLoginRequest(TEST_EMAIL, RAW_PASSWORD));
 
-            // make sure the response carries the right email, OTP, and flag
             assertThat(response).isNotNull();
             assertThat(response.getEmail()).isEqualTo(TEST_EMAIL);
             assertThat(response.isOtpRequired()).isTrue();
+            // the OTP must only go out by email, never in the API response
+            assertThat(response.getOtp()).isNull();
+            verify(notificationProducer).sendLoginOtpEmail(eq(TEST_EMAIL), eq(TEST_OTP), any());
+        }
+
+        @Test
+        @DisplayName("Returns the OTP in the response only when local-testing exposure is enabled")
+        void returnsOtpInResponse_onlyWhenExposureEnabled() {
+            AuthServiceImpl devAuthService = new AuthServiceImpl(
+                    userClient, passwordEncoder, jwtService, otpService,
+                    new OtpExposurePolicy(true), notificationProducer);
+
+            when(userClient.getUserByEmail(TEST_EMAIL)).thenReturn(okResponse(activeUser));
+            when(passwordEncoder.matches(RAW_PASSWORD, HASHED_PASSWORD)).thenReturn(true);
+            when(otpService.generateOtp()).thenReturn(TEST_OTP);
+
+            LoginOtpResponse response = devAuthService.initiateLogin(buildLoginRequest(TEST_EMAIL, RAW_PASSWORD));
+
             assertThat(response.getOtp()).isEqualTo(TEST_OTP);
         }
     }

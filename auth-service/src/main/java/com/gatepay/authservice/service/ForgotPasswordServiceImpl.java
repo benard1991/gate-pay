@@ -7,6 +7,7 @@ import com.gatepay.authservice.exception.AccountDisabledException;
 import com.gatepay.authservice.exception.UserNotFoundException;
 import com.gatepay.authservice.producer.AuthNotificationProducer;
 import com.gatepay.authservice.service.otp.OtpService;
+import com.gatepay.authservice.security.OtpExposurePolicy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -20,6 +21,7 @@ public class ForgotPasswordServiceImpl implements ForgotPasswordService {
 
     private final UserClient userClient;
     private final OtpService otpService;
+    private final OtpExposurePolicy otpExposurePolicy;
     private final AuthNotificationProducer notificationProducer;
 
     @Override
@@ -44,7 +46,7 @@ public class ForgotPasswordServiceImpl implements ForgotPasswordService {
         return new ForgotPasswordResponse(
                 "OTP sent successfully to email: " + user.getEmail(),
                 user.getEmail(),
-                otp
+                otpExposurePolicy.forResponse(otp)
         );
 
     }

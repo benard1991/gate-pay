@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.PathVariable;
         configuration = UserClientConfig.class
 )
 public interface UserClient {
-    @GetMapping("/users/{userId}/profile")
+    @GetMapping("/internal/users/{userId}")
     ApiResponse<UserDto> getUserProfile(@PathVariable("userId") Long userId );
 
 }

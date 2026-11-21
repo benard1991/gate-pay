@@ -17,6 +17,8 @@ import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
+import com.gatepay.authservice.security.OtpExposurePolicy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.assertj.core.api.Assertions.*;
@@ -43,6 +45,7 @@ class ForgotPasswordServiceImplTest {
     @Mock private UserClient               userClient;
     @Mock private OtpService               otpService;
     @Mock private AuthNotificationProducer notificationProducer;
+    @Spy  private OtpExposurePolicy        otpExposurePolicy = new OtpExposurePolicy(false);
 
     @InjectMocks
     private ForgotPasswordServiceImpl service;
@@ -81,6 +84,8 @@ class ForgotPasswordServiceImplTest {
             // Assert — response shape
             assertThat(result).isNotNull();
             assertThat(result.getEmail()).isEqualTo(TEST_EMAIL);
+            // returning the reset OTP would let anyone who knows the email take over the account
+            assertThat(result.getOtp()).isNull();
 
             // Assert — OTP stored with correct key and TTL
             verify(otpService).storeOtp(TEST_EMAIL, TEST_OTP, OTP_TTL_MINUTES);

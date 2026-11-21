@@ -14,10 +14,10 @@ import org.springframework.web.bind.annotation.*;
 )
 public interface UserClient {
 
-    @GetMapping("/users")
+    @GetMapping("/internal/users/credentials")
     ApiResponse<UserDto> getUserByEmail(@RequestParam("email") String email);
 
-    @PutMapping("/users/reset-password")
+    @PutMapping("/internal/users/reset-password")
     ApiResponse<String> resetPassword(@RequestBody PasswordUpdateRequest request);
 }
 

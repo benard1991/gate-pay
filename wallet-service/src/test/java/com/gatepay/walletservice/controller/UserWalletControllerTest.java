@@ -81,7 +81,7 @@ class UserWalletControllerTest {
         void returnsWalletWhenFound() throws Exception {
             when(walletService.getWalletByUserId(42L)).thenReturn(walletResponse());
 
-            mockMvc.perform(get("/wallets/42"))
+            mockMvc.perform(get("/wallets/42").header("X-User-Id", "42"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.userId").value(42))
                     .andExpect(jsonPath("$.data.balance").value(1000.00))
@@ -96,7 +96,7 @@ class UserWalletControllerTest {
             when(walletService.getWalletByUserId(99L))
                     .thenThrow(new WalletNotFoundException("Wallet not found for user: 99"));
 
-            mockMvc.perform(get("/wallets/99"))
+            mockMvc.perform(get("/wallets/99").header("X-User-Id", "99"))
                     .andExpect(status().isNotFound());
         }
 
@@ -106,7 +106,7 @@ class UserWalletControllerTest {
             when(walletService.getWalletByUserId(42L))
                     .thenThrow(new WalletServiceException(ErrorCode.WALLET_SUSPENDED));
 
-            mockMvc.perform(get("/wallets/42"))
+            mockMvc.perform(get("/wallets/42").header("X-User-Id", "42"))
                     .andExpect(status().isForbidden());
         }
     }
@@ -131,7 +131,7 @@ class UserWalletControllerTest {
             when(transactionService.debit(any(DebitWalletRequest.class)))
                     .thenReturn(debitTransactionResponse());
 
-            mockMvc.perform(post("/wallets/debit")
+            mockMvc.perform(post("/wallets/debit").header("X-User-Id", "42")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isCreated())
@@ -153,7 +153,7 @@ class UserWalletControllerTest {
                     .idempotencyKey("idem-debit-001")
                     .build();
 
-            mockMvc.perform(post("/wallets/debit")
+            mockMvc.perform(post("/wallets/debit").header("X-User-Id", "42")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isBadRequest());
@@ -169,7 +169,7 @@ class UserWalletControllerTest {
                     .idempotencyKey("idem-debit-001")
                     .build();
 
-            mockMvc.perform(post("/wallets/debit")
+            mockMvc.perform(post("/wallets/debit").header("X-User-Id", "42")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isBadRequest());
@@ -184,7 +184,7 @@ class UserWalletControllerTest {
                     .source(TransactionSource.WITHDRAWAL)
                     .build();
 
-            mockMvc.perform(post("/wallets/debit")
+            mockMvc.perform(post("/wallets/debit").header("X-User-Id", "42")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isBadRequest());
@@ -204,7 +204,7 @@ class UserWalletControllerTest {
                     .thenThrow(new InsufficientBalanceException(
                             "Insufficient balance. Available: 1000.00 Requested: 9999.00"));
 
-            mockMvc.perform(post("/wallets/debit")
+            mockMvc.perform(post("/wallets/debit").header("X-User-Id", "42")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isUnprocessableEntity());
@@ -223,7 +223,7 @@ class UserWalletControllerTest {
             when(transactionService.debit(any()))
                     .thenThrow(new WalletServiceException(ErrorCode.WALLET_SUSPENDED));
 
-            mockMvc.perform(post("/wallets/debit")
+            mockMvc.perform(post("/wallets/debit").header("X-User-Id", "42")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isForbidden());
@@ -242,7 +242,7 @@ class UserWalletControllerTest {
             when(transactionService.debit(any()))
                     .thenThrow(new WalletServiceException(ErrorCode.WALLET_CLOSED));
 
-            mockMvc.perform(post("/wallets/debit")
+            mockMvc.perform(post("/wallets/debit").header("X-User-Id", "42")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isForbidden());
@@ -262,14 +262,14 @@ class UserWalletControllerTest {
                     .thenReturn(debitTransactionResponse());
 
             // first call
-            mockMvc.perform(post("/wallets/debit")
+            mockMvc.perform(post("/wallets/debit").header("X-User-Id", "42")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isCreated())
                     .andExpect(jsonPath("$.data.reference").value("WLT-DEBIT-001"));
 
             // second call with same idempotency key — service handles dedup, controller just passes through
-            mockMvc.perform(post("/wallets/debit")
+            mockMvc.perform(post("/wallets/debit").header("X-User-Id", "42")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isCreated())
@@ -291,7 +291,7 @@ class UserWalletControllerTest {
             when(transactionService.getTransactions(eq(42L), any(TransactionFilterRequest.class)))
                     .thenReturn(transactionPage());
 
-            mockMvc.perform(get("/wallets/42/transactions"))
+            mockMvc.perform(get("/wallets/42/transactions").header("X-User-Id", "42"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.content[0].reference").value("WLT-DEBIT-001"))
                     .andExpect(jsonPath("$.data.content[0].type").value("DEBIT"))
@@ -312,7 +312,7 @@ class UserWalletControllerTest {
             when(transactionService.getTransactions(eq(42L), any()))
                     .thenReturn(emptyPage);
 
-            mockMvc.perform(get("/wallets/42/transactions"))
+            mockMvc.perform(get("/wallets/42/transactions").header("X-User-Id", "42"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.content").isEmpty())
                     .andExpect(jsonPath("$.data.totalElements").value(0));
@@ -324,7 +324,7 @@ class UserWalletControllerTest {
             when(transactionService.getTransactions(eq(99L), any()))
                     .thenThrow(new WalletNotFoundException("Wallet not found for user: 99"));
 
-            mockMvc.perform(get("/wallets/99/transactions"))
+            mockMvc.perform(get("/wallets/99/transactions").header("X-User-Id", "99"))
                     .andExpect(status().isNotFound());
         }
 
@@ -334,7 +334,7 @@ class UserWalletControllerTest {
             when(transactionService.getTransactions(eq(42L), any(TransactionFilterRequest.class)))
                     .thenReturn(transactionPage());
 
-            mockMvc.perform(get("/wallets/42/transactions")
+            mockMvc.perform(get("/wallets/42/transactions").header("X-User-Id", "42")
                             .param("type", "DEBIT"))
                     .andExpect(status().isOk());
 
@@ -348,7 +348,7 @@ class UserWalletControllerTest {
             when(transactionService.getTransactions(eq(42L), any(TransactionFilterRequest.class)))
                     .thenReturn(transactionPage());
 
-            mockMvc.perform(get("/wallets/42/transactions")
+            mockMvc.perform(get("/wallets/42/transactions").header("X-User-Id", "42")
                             .param("status", "SUCCESS"))
                     .andExpect(status().isOk());
 
@@ -362,7 +362,7 @@ class UserWalletControllerTest {
             when(transactionService.getTransactions(eq(42L), any(TransactionFilterRequest.class)))
                     .thenReturn(transactionPage());
 
-            mockMvc.perform(get("/wallets/42/transactions")
+            mockMvc.perform(get("/wallets/42/transactions").header("X-User-Id", "42")
                             .param("page", "1")
                             .param("size", "10"))
                     .andExpect(status().isOk());
@@ -381,10 +381,10 @@ class UserWalletControllerTest {
         @Test
         @DisplayName("returns the transaction when the reference exists")
         void returnsTransactionWhenFound() throws Exception {
-            when(transactionService.getByReference("WLT-DEBIT-001"))
+            when(transactionService.getByReferenceForUser("WLT-DEBIT-001", 42L))
                     .thenReturn(debitTransactionResponse());
 
-            mockMvc.perform(get("/wallets/transactions/WLT-DEBIT-001"))
+            mockMvc.perform(get("/wallets/transactions/WLT-DEBIT-001").header("X-User-Id", "42"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.reference").value("WLT-DEBIT-001"))
                     .andExpect(jsonPath("$.data.type").value("DEBIT"))
@@ -396,11 +396,56 @@ class UserWalletControllerTest {
         @Test
         @DisplayName("returns 404 when the reference does not exist")
         void returns404WhenReferenceNotFound() throws Exception {
-            when(transactionService.getByReference("GHOST-REF"))
+            when(transactionService.getByReferenceForUser("GHOST-REF", 42L))
                     .thenThrow(new TransactionNotFoundException("Transaction not found: GHOST-REF"));
 
-            mockMvc.perform(get("/wallets/transactions/GHOST-REF"))
+            mockMvc.perform(get("/wallets/transactions/GHOST-REF").header("X-User-Id", "42"))
                     .andExpect(status().isNotFound());
+        }
+    }
+
+    @Nested
+    @DisplayName("Ownership: a user can only touch their own wallet")
+    class Ownership {
+
+        @Test
+        @DisplayName("403 when viewing another user's wallet")
+        void cannotViewAnotherUsersWallet() throws Exception {
+            mockMvc.perform(get("/wallets/99").header("X-User-Id", "42"))
+                    .andExpect(status().isForbidden());
+            verify(walletService, never()).getWalletByUserId(any());
+        }
+
+        @Test
+        @DisplayName("403 when debiting another user's wallet")
+        void cannotDebitAnotherUsersWallet() throws Exception {
+            DebitWalletRequest request = DebitWalletRequest.builder()
+                    .userId(99L)
+                    .amount(new BigDecimal("300.00"))
+                    .source(TransactionSource.WITHDRAWAL)
+                    .idempotencyKey("steal-001")
+                    .build();
+
+            mockMvc.perform(post("/wallets/debit").header("X-User-Id", "42")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(request)))
+                    .andExpect(status().isForbidden());
+            verify(transactionService, never()).debit(any());
+        }
+
+        @Test
+        @DisplayName("403 when viewing another user's transactions")
+        void cannotViewAnotherUsersTransactions() throws Exception {
+            mockMvc.perform(get("/wallets/99/transactions").header("X-User-Id", "42"))
+                    .andExpect(status().isForbidden());
+            verify(transactionService, never()).getTransactions(any(), any());
+        }
+
+        @Test
+        @DisplayName("403 when the request did not come through the gateway")
+        void rejectsRequestWithoutIdentity() throws Exception {
+            mockMvc.perform(get("/wallets/42"))
+                    .andExpect(status().isForbidden());
         }
     }
 }

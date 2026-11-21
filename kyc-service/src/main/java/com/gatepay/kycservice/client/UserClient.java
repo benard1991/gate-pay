@@ -13,10 +13,10 @@ import org.springframework.web.bind.annotation.*;
         configuration = UserClientConfig.class
 )
 public interface UserClient {
-    @GetMapping("/users/{userId}/profile")
+    @GetMapping("/internal/users/{userId}")
     ApiResponse<UserDto> getUserProfile(@PathVariable("userId") Long userId );
 
-    @PutMapping("/users/admin/{userId}/updateKycVerified")
+    @PutMapping("/internal/users/{userId}/kyc-verified")
     ApiResponse<AdminUserResponseDto> updateKycVerified(
             @PathVariable("userId") Long userId,
             @RequestParam("kycVerified") boolean kycVerified

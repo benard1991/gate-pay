@@ -40,6 +40,8 @@ public class JwtService {
 
         String accessToken = Jwts.builder()
                 .setSubject(user.getEmail())
+                // the gateway forwards this as X-User-Id so services can enforce ownership
+                .claim("uid", user.getId())
                 .claim("roles", user.getRoles())
                 .setIssuedAt(Date.from(now))
                 .setExpiration(Date.from(accessExp))

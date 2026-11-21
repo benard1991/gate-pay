@@ -216,6 +216,12 @@ public class KycServiceImpl implements KycService {
                         "KYC request cannot be updated. Only PENDING requests are editable."
                 ));
 
+        // someone else's KYC gets the same answer as a missing one
+        if (!kyc.getUserId().equals(dto.getUserId())) {
+            throw new KycException(
+                    "KYC request cannot be updated. Only PENDING requests are editable.");
+        }
+
         if (dto.getNin() != null && kycRepository.existsByNin(dto.getNin())) {
             throw new KycException("This NIN is already associated with another user");
         }

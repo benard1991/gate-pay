@@ -106,3 +106,8 @@ springdoc:
     path: /api-docs
   swagger-ui:
     path: /swagger-ui.html
+# Emails that get the ADMIN role when they register (comma-separated).
+# Roles are never taken from the registration request.
+gatepay:
+  security:
+    bootstrap-admin-emails: ${BOOTSTRAP_ADMIN_EMAILS:}
