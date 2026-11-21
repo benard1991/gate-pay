@@ -64,7 +64,7 @@ flowchart TB
 | `gateway-service` | 9090 | Single entry point — routing, JWT validation, rate limiting, and circuit breaking |
 | `auth-service` | 8081 | Issues and validates JWTs, handles OTP flows, login, and password reset |
 | `user-service` | 8082 | User registration, profile management, and role assignment |
-| `payment-service` | 8087 | Processes payments via Paystack and Flutterwave with automatic failover |
+| `payment-service` | 8087 | Processes payments via Paystack and Flutterwave through pluggable provider strategies |
 | `wallet-service` | 8086 | Manages user wallets — balances, credits, debits, reversals, and transaction history |
 | `kyc-service` | 8085 | Document uploads via Cloudinary and admin KYC approval workflows |
 | `notification-service` | 8084 | Consumes RabbitMQ events and dispatches transactional emails |
