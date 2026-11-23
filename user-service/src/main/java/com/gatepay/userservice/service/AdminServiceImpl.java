@@ -94,6 +94,37 @@ public class AdminServiceImpl implements AdminService {
     @Cacheable(
             value = "adminUserSearch",
             key = "'keyword=' + (#a0 == null ? '' : #a0.trim())"
+                    + " + ',status=' + (#a1 == null ? '' : #a1.name())"
+                    + " + ',page=' + (#a2 == null ? 0 : #a2.pageNumber)"
+                    + " + ',size=' + (#a2 == null ? 10 : #a2.pageSize)",
+            unless = "#result == null"
+    )
+    public PaginatedResponse<AdminUserResponseDto> searchUsers(String keyword, AccountStatus status, Pageable pageable) {
+        if (pageable == null) {
+            pageable = PageRequest.of(0, 10);
+        }
+        String trimmed = (keyword == null || keyword.trim().isEmpty()) ? null : keyword.trim();
+
+        Page<User> pageResult = adminRepository.searchUsersByKeywordAndStatus(trimmed, status, pageable);
+
+        List<AdminUserResponseDto> users = pageResult.getContent()
+                .stream()
+                .map(AdminMapper::toAdminDto)
+                .collect(Collectors.toList());
+
+        return new PaginatedResponse<>(users, new PaginationResponse(
+                pageResult.getSize(),
+                pageResult.getNumber(),
+                pageResult.getTotalPages(),
+                pageResult.getTotalElements()
+        ));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    @Cacheable(
+            value = "adminUserSearch",
+            key = "'keyword=' + (#a0 == null ? '' : #a0.trim())"
                     + " + ',page=' + (#a1 == null ? 0 : #a1.pageNumber)"
                     + " + ',size=' + (#a1 == null ? 10 : #a1.pageSize)",
             unless = "#result == null"
@@ -153,7 +184,8 @@ public class AdminServiceImpl implements AdminService {
     @Caching(evict = {
             @CacheEvict(value = "userProfiles", key = "#userId"),
             @CacheEvict(value = "adminUserById", key = "#userId"),
-            @CacheEvict(value = "adminUsers", allEntries = true)
+            @CacheEvict(value = "adminUsers", allEntries = true),
+            @CacheEvict(value = "adminUserSearch", allEntries = true)
     })
     public AdminUserResponseDto updateKycVerified(Long userId, boolean kycVerified) {
         User user = adminRepository.findById(userId)

@@ -14,6 +14,7 @@ import com.gatepay.userservice.mapper.UpdateUserMapper;
 import com.gatepay.userservice.validation.AccountStatusValidator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.annotation.Transactional;
@@ -61,6 +62,10 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional
+    @Caching(evict = {
+            @CacheEvict(value = "adminUsers", allEntries = true),
+            @CacheEvict(value = "adminUserSearch", allEntries = true)
+    })
     public UserDto createUser(UserDto userDto) {
         if (userDto == null) {
             throw new IllegalArgumentException("User data must not be null");

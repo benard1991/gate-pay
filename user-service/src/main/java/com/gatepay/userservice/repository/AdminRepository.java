@@ -1,5 +1,6 @@
 package com.gatepay.userservice.repository;
 
+import com.gatepay.userservice.enums.AccountStatus;
 import com.gatepay.userservice.model.User;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -35,5 +36,19 @@ public interface AdminRepository extends JpaRepository<User, Long> {
         OR u.phoneNumber LIKE CONCAT('%', :keyword, '%')
      """)
     Page<User> searchUsers(@Param("keyword") String keyword, Pageable pageable);
+
+    // Both filters optional: null keyword matches everyone, null status matches every status
+    @Query("""
+    SELECT u FROM User u
+    WHERE (:status IS NULL OR u.status = :status)
+      AND (:keyword IS NULL
+        OR LOWER(u.firstName) LIKE LOWER(CONCAT('%', :keyword, '%'))
+        OR LOWER(u.lastName) LIKE LOWER(CONCAT('%', :keyword, '%'))
+        OR LOWER(u.email) LIKE LOWER(CONCAT('%', :keyword, '%'))
+        OR u.phoneNumber LIKE CONCAT('%', :keyword, '%'))
+     """)
+    Page<User> searchUsersByKeywordAndStatus(@Param("keyword") String keyword,
+                                             @Param("status") AccountStatus status,
+                                             Pageable pageable);
 
 }

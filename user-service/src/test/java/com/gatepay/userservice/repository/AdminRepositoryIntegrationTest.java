@@ -251,4 +251,54 @@ class AdminRepositoryIntegrationTest {
             assertThat(result.getTotalPages()).isEqualTo(2);
         }
     }
+
+    @Nested
+    @DisplayName("searchUsersByKeywordAndStatus()")
+    class SearchByKeywordAndStatusTests {
+
+        private void setStatus(String email, AccountStatus status) {
+            User user = adminRepository.findByEmailIgnoreCase(email).orElseThrow();
+            user.setStatus(status);
+            adminRepository.save(user);
+        }
+
+        @BeforeEach
+        void statuses() {
+            setStatus("ben@example.com", AccountStatus.SUSPENDED);
+            setStatus("ada@example.com", AccountStatus.ACTIVE);
+        }
+
+        @Test
+        @DisplayName("Filters by status alone")
+        void filters_by_status_only() {
+            Page<User> result = adminRepository.searchUsersByKeywordAndStatus(
+                    null, AccountStatus.SUSPENDED, PageRequest.of(0, 10));
+
+            assertThat(result.getContent()).extracting(User::getEmail).containsExactly("ben@example.com");
+        }
+
+        @Test
+        @DisplayName("Combines keyword and status")
+        void combines_keyword_and_status() {
+            assertThat(adminRepository.searchUsersByKeywordAndStatus(
+                    "ben", AccountStatus.SUSPENDED, PageRequest.of(0, 10)).getTotalElements()).isEqualTo(1);
+            assertThat(adminRepository.searchUsersByKeywordAndStatus(
+                    "ada", AccountStatus.SUSPENDED, PageRequest.of(0, 10)).getTotalElements()).isZero();
+        }
+
+        @Test
+        @DisplayName("Keyword alone still searches name, email and phone")
+        void keyword_only() {
+            assertThat(adminRepository.searchUsersByKeywordAndStatus(
+                    "okonkwo", null, PageRequest.of(0, 10)).getContent())
+                    .extracting(User::getEmail).containsExactly("ada@example.com");
+        }
+
+        @Test
+        @DisplayName("No filters returns everyone")
+        void no_filters_returns_all() {
+            assertThat(adminRepository.searchUsersByKeywordAndStatus(
+                    null, null, PageRequest.of(0, 10)).getTotalElements()).isEqualTo(2);
+        }
+    }
 }
