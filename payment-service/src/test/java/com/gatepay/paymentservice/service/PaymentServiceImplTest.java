@@ -7,7 +7,10 @@ import com.gatepay.paymentservice.exception.DuplicateTransactionException;
 import com.gatepay.paymentservice.exception.PaymentException;
 import com.gatepay.paymentservice.exception.ReferenceNotFoundException;
 import com.gatepay.paymentservice.helper.PaymentRequestHelper;
+import com.gatepay.paymentservice.exception.ErrorCode;
+import com.gatepay.paymentservice.exception.PaymentServiceException;
 import com.gatepay.paymentservice.helper.UserValidationHelper;
+import com.gatepay.paymentservice.helper.WalletValidationHelper;
 import com.gatepay.paymentservice.model.AuditLog;
 import com.gatepay.paymentservice.model.Payment;
 import com.gatepay.paymentservice.model.PaymentTransaction;
@@ -49,6 +52,7 @@ class PaymentServiceImplTest {
     @Mock private PaymentRepository paymentRepository;
     @Mock private AuditLogRepository auditLogRepository;
     @Mock private UserValidationHelper userValidationHelper;
+    @Mock private WalletValidationHelper walletValidationHelper;
     @Mock private PaymentRequestHelper paymentRequestHelper;
     @Mock private IdempotencyService idempotencyService;
     @Mock private ObjectMapper objectMapper;
@@ -230,8 +234,28 @@ class PaymentServiceImplTest {
 
             assertThatThrownBy(() ->
                     paymentService.initializePayment(request, PaymentProvider.PAYSTACK, "127.0.0.1")
-            ).isInstanceOf(PaymentException.class);
+            ).isInstanceOf(PaymentException.class)
+                    // 502 from the provider, not a KYC conflict, and the message isn't wrapped twice
+                    .satisfies(e -> assertThat(((PaymentServiceException) e).getErrorCode()).isEqualTo(ErrorCode.PROVIDER_ERROR))
+                    .hasMessage("Provider rejected the request");
 
+            verify(transactionRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("should not contact the provider when the user has no usable wallet")
+        void should_stop_before_provider_when_wallet_check_fails() {
+            PaymentRequest request = buildRequest();
+
+            when(userValidationHelper.validateUserForPayment(1L)).thenReturn(new UserDto());
+            when(walletValidationHelper.validateWalletForPayment(eq(1L), any()))
+                    .thenThrow(new PaymentServiceException(ErrorCode.WALLET_NOT_FOUND, "no wallet"));
+
+            assertThatThrownBy(() ->
+                    paymentService.initializePayment(request, PaymentProvider.PAYSTACK, "127.0.0.1")
+            ).satisfies(e -> assertThat(((PaymentServiceException) e).getErrorCode()).isEqualTo(ErrorCode.WALLET_NOT_FOUND));
+
+            verifyNoInteractions(paymentContext);
             verify(transactionRepository, never()).save(any());
         }
 
@@ -411,6 +435,22 @@ class PaymentServiceImplTest {
             assertThat(tx.getStatus()).isEqualTo(TransactionStatus.FAILED);
             verify(outboxService, never()).save(any(), any(), any(), any(), any(), any());
             verify(auditLogRepository).save(any(AuditLog.class));
+        }
+
+        @Test
+        @DisplayName("should keep ABANDONED checkouts as PENDING, the customer can still pay")
+        void should_treat_abandoned_as_pending() {
+            VerifyPaymentRequest request = buildVerifyRequest();
+            PaymentTransaction tx = buildTransaction(TransactionStatus.PENDING);
+
+            when(paymentContext.verifyPayment(PaymentProvider.PAYSTACK, "REF-001"))
+                    .thenReturn(buildVerifyResponse("abandoned"));
+            when(transactionRepository.findByReference("REF-001")).thenReturn(Optional.of(tx));
+
+            paymentService.verifyPayment(request, "admin@example.com", "127.0.0.1", "Mozilla/5.0");
+
+            assertThat(tx.getStatus()).isEqualTo(TransactionStatus.PENDING);
+            verify(outboxService, never()).save(any(), any(), any(), any(), any(), any());
         }
 
         @Test
