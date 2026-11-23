@@ -18,6 +18,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.data.domain.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -42,7 +43,12 @@ public class AdminKycServiceImpl implements AdminKycService {
 
     @Override
     @Transactional
-    @CacheEvict(value = "kycByUserId", key = "#kycId")
+    // cache is keyed by user id, not kyc id, so take it from the returned dto
+    @Caching(evict = {
+            @CacheEvict(value = "kycByUserId", key = "#result.userId"),
+            @CacheEvict(value = "kycAllRequests", allEntries = true),
+            @CacheEvict(value = "auditTrails", allEntries = true)
+    })
     public KycRequestDto updateKycStatus(Long kycId, String statusStr, String comments, String ipAddress) {
 
         KycRequest kycRequest = kycRepository.findById(kycId)
