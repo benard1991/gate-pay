@@ -1,13 +1,18 @@
 # GatePay — Microservices Payment Gateway
 
-GatePay is a production-grade payment gateway built on a microservices
-architecture using Java 17, Spring Boot 3, and Spring Cloud. It covers
-the full lifecycle of a payment platform — user onboarding, JWT
-authentication with OTP, KYC verification with document uploads,
-multi-provider payment processing (Paystack & Flutterwave), event-driven
-wallet management with idempotency and optimistic locking, and async
-email notifications — across 8 independently deployable services
-orchestrated via Docker Compose.
+GatePay is a payment gateway built on a microservices architecture using
+Java 17, Spring Boot 3, and Spring Cloud. It covers the full lifecycle of a
+payment platform — user onboarding, JWT authentication with OTP, KYC
+verification with document uploads, payments through Paystack and
+Flutterwave, event-driven wallets, and async email notifications — across
+8 independently deployable services orchestrated via Docker Compose.
+
+The interesting parts are the ones that deal with money and consistency:
+payment and KYC events go through a transactional outbox so they can't be
+lost, wallet credits are idempotent at the database level, concurrent
+balance updates use optimistic locking with retries, and every user-scoped
+endpoint checks that the caller owns the data.
+
 ---
 
 ## Architecture
@@ -36,18 +41,19 @@ flowchart TB
     GW --> WALLET
     GW --> KYC
 
-    AUTH <-->|Feign| USER
-    KYC <-->|Feign| USER
-    PAY -->|Feign| USER
-    PAY -->|Feign| KYC
-    WALLET -->|Feign| USER
+    AUTH -->|"Feign (internal)"| USER
+    KYC -->|"Feign (internal)"| USER
+    PAY -->|"Feign (internal) · user + KYC check"| USER
+    PAY -->|"Feign (internal) · wallet check"| WALLET
+    WALLET -->|"Feign (internal)"| USER
 
     AUTH -->|"OTP · login · forgot/reset password"| MQ
     USER -->|registration| MQ
-    KYC -->|"status updates · kyc.approved"| MQ
-    PAY -->|"payment.success"| MQ
+    KYC -->|"kyc.approved · kyc.rejected (outbox)"| MQ
+    PAY -->|"payment.success (outbox)"| MQ
 
     MQ --> NOTIFY
+    MQ -->|"kyc.approved/rejected → set kycVerified"| USER
     MQ -->|"kyc.approved → create wallet"| WALLET
     MQ -->|"payment.success → credit wallet"| WALLET
 
@@ -123,6 +129,11 @@ cp notification-service/.env.example notification-service/.env
 cp gateway-service/.env.example gateway-service/.env
 ```
 
+Two settings worth knowing about for local work:
+
+- `BOOTSTRAP_ADMIN_EMAILS` in `user-service/.env` — comma-separated emails that get the ADMIN role when they register. Registration never takes roles from the request, so this is the only way to create the first admin.
+- `EXPOSE_OTP_IN_RESPONSE` in `auth-service/.env` — set to `true` locally to get the login/reset OTP back in the API response instead of checking your email. Leave it `false` anywhere real.
+
 ### 3. Enable Docker BuildKit
 
 ```bash
@@ -176,7 +187,9 @@ Each service exposes its own interactive API documentation via Swagger UI. All e
 | KYC Service | http://localhost:8085/swagger-ui.html | http://localhost:8085/api-docs |
 | Notification Service | http://localhost:8084/swagger-ui.html | http://localhost:8084/api-docs |
 
-> **Note:** The API Gateway (port 9090) handles routing and JWT validation. To test authenticated endpoints via Swagger, first call the login endpoint on auth-service to obtain a JWT, then click **Authorize** in the Swagger UI and paste the token.
+> **Note:** Use the gateway (port 9090) for anything that needs a logged-in user. Login is two steps: `POST /api/v1/auth/initiateLogin` sends an OTP, then `POST /api/v1/auth/verify-otp` returns the access token. Send it as `Authorization: Bearer <token>`.
+>
+> The gateway is also what tells each service who the caller is (it sets `X-User-Id` from the token). Calling a service directly on its own port skips that, so user-scoped endpoints like `/wallets/{userId}` return 403 there. The per-service Swagger pages are fine for browsing the API.
 
 ---
 
@@ -193,15 +206,17 @@ User submits KYC documents
       ↓
 Admin approves KYC
       ↓
-kyc-service publishes KYC_APPROVED event
+kyc-service saves the decision + a KYC_APPROVED event (outbox)
       ↓
-wallet-service auto-creates wallet
+outbox relay publishes it to RabbitMQ
+      ↓
+user-service marks the user KYC-verified, wallet-service auto-creates the wallet
       ↓
 User gets email — "Your wallet is ready"
       ↓
-User makes payment via payment-service
+User makes payment via payment-service (wallet checked first)
       ↓
-payment-service publishes PAYMENT_SUCCESS event
+payment-service saves PAYMENT_SUCCESS to its outbox, relay publishes it
       ↓
 wallet-service auto-credits wallet
       ↓
@@ -250,10 +265,10 @@ The transaction history endpoint supports the following query parameters:
 
 | Standard | Implementation |
 |---|---|
-| **Idempotency** | Every credit and debit requires a unique `idempotencyKey`. Duplicate requests return the cached response from Redis — no double charges |
-| **Optimistic Locking** | `@Version` on the `Wallet` entity prevents race conditions on concurrent balance updates |
-| **Double-entry** | Every transaction records `balanceBefore` and `balanceAfter` — full audit trail |
-| **Dead Letter Queues** | All RabbitMQ queues have DLQs — failed messages are never lost |
+| **Idempotency** | Every credit and debit needs an `idempotencyKey`. A unique key on `(wallet_id, idempotency_key)` in MySQL is what actually stops a double credit; Redis caches the response so repeats are cheap. The cache is only written after the database commit |
+| **Optimistic Locking** | `@Version` on the `Wallet` entity. When two updates collide the loser retries on a fresh read (up to 3 times), then gets a 409 |
+| **Balance audit trail** | Every transaction records `balanceBefore` and `balanceAfter` |
+| **Dead Letter Queues** | The event queues wallet-service consumes have DLQs, so a message that keeps failing is parked rather than dropped |
 | **Event-driven** | Wallet creation and credits are triggered by RabbitMQ events — no tight coupling to KYC or payment services |
 | **Separation of concerns** | Admin and user endpoints are in separate controllers |
 
@@ -261,8 +276,9 @@ The transaction history endpoint supports the following query parameters:
 
 | Event | Publisher | Consumer | Action |
 |---|---|---|---|
-| `kyc.approved` | kyc-service | wallet-service | Auto-create wallet |
-| `payment.success` | payment-service | wallet-service | Auto-credit wallet |
+| `kyc.approved` | kyc-service (outbox) | wallet-service | Auto-create wallet (safe if delivered twice) |
+| `kyc.approved` / `kyc.rejected` | kyc-service (outbox) | user-service | Set `kycVerified` |
+| `payment.success` | payment-service (outbox) | wallet-service | Auto-credit wallet |
 | `wallet.credit` | wallet-service | — | Internal audit |
 | `wallet.debit` | wallet-service | — | Internal audit |
 | `wallet.reversal` | wallet-service | — | Internal audit |
@@ -368,14 +384,16 @@ mvn clean test -pl notification-service -Dtest=EmailStrategyTest
 
 | Service | Status |
 |---|---|
-| `auth-service` | ✅ Complete — unit and integration tests |
-| `user-service` | ✅ Complete — unit and integration tests |
-| `kyc-service` | ✅ Complete — unit and integration tests |
-| `payment-service` | ✅ Complete — unit and integration tests |
-| `wallet-service` | ✅ Complete — unit and integration tests |
-| `notification-service` | ✅ Complete — unit and integration tests |
-| `gateway-service` | — No custom logic to test |
-| `discovery-service` | — No custom logic to test |
+| `auth-service` | Unit and integration tests |
+| `user-service` | Unit and integration tests, including ownership checks |
+| `kyc-service` | Unit and integration tests, including the outbox |
+| `payment-service` | Unit and integration tests, including the outbox and wallet check |
+| `wallet-service` | Unit and integration tests, including idempotency and lock retries |
+| `notification-service` | Unit and integration tests |
+| `gateway-service` | No unit tests yet — the JWT filter and access rules were checked end to end against the running stack |
+| `discovery-service` | No custom logic to test |
+
+Known issues: `PaymentEventProducerIntegrationTest` and `WalletRepositoryIntegrationTest` can fail when the whole suite runs in one JVM (they share Testcontainers state with other classes) but pass on their own. On a machine with little memory, run integration test classes one at a time.
 
 ---
 
@@ -596,29 +614,35 @@ Container is stopped and removed automatically after the test run
 
 ## How It Works
 
-### Authentication
+### Authentication and authorization
 
-All requests hit the API Gateway first. The gateway validates the JWT before forwarding to any downstream service. Auth-service handles token issuance, OTP generation, and password reset flows. Inter-service calls carry the JWT through Feign clients so authentication context is preserved end-to-end.
+All requests go through the API Gateway, which validates the JWT, rate-limits per client (Bucket4j token bucket) and applies role rules. Login is password + OTP. Registration always creates a `USER`; admins come from server config (`BOOTSTRAP_ADMIN_EMAILS`), never from the request.
+
+Being logged in isn't the same as being allowed. The gateway strips any `X-User-Id` / `X-Username` headers the client sends and sets them from the verified token. Every user-scoped endpoint (profile, wallet, payments, KYC) checks that the id in the request is the caller's own and returns 403 otherwise. Admins see other users' data only through the `/admin/**` endpoints, and can't make payments, spend from wallets or submit KYC themselves.
+
+Service-to-service calls use separate `/internal/**` endpoints. The gateway only routes `/api/v1/**`, so those can't be reached from outside. Password hashes are only returned by the internal lookup auth-service uses to check a login.
 
 ### Payments
 
-Payment-service integrates with both Paystack and Flutterwave. If one provider fails, Resilience4j's circuit breaker trips and the request is handled gracefully rather than timing out. All transactions are idempotent — duplicate requests are detected and rejected. Every payment produces a full audit trail.
+Payment-service uses a strategy per provider (Paystack, Flutterwave), so adding one means adding a class. Before a customer is sent to the provider it checks the user is active and KYC-verified, and asks wallet-service whether they have an active wallet — otherwise the customer could be charged with nowhere to credit. Duplicate requests are caught by reference (database, Redis lock and cached response).
+
+When a payment is verified, the `payment.success` event is written to an outbox table in the same transaction as the status change. A scheduled relay publishes it with broker confirms and exponential backoff. Delivery is at-least-once, which is why the wallet credit is idempotent. A checkout the customer hasn't finished (`ABANDONED`) stays `PENDING`, since they can still pay.
 
 ### Wallet
 
-Wallet-service runs independently of payment-service. Wallets are created automatically after KYC approval via a RabbitMQ event. Credits happen automatically after payment verification via another RabbitMQ event. All balance mutations use optimistic locking to prevent race conditions, and every transaction is idempotent via Redis-backed idempotency keys. Admin reversals are available for correcting erroneous transactions.
+Wallets are created when KYC is approved and credited when a payment succeeds, both from RabbitMQ events. Balance changes use optimistic locking with a small retry, and every credit/debit is idempotent: a unique key in MySQL enforces it, and Redis caches the response once the transaction has committed. Admin reversals are available for correcting mistakes.
 
 ### KYC
 
-Users upload identity documents through the KYC service, which stores them via Cloudinary. Admins review and approve or reject submissions through a dedicated workflow. Redis is used to enforce idempotency on document submissions. On approval, a `kyc.approved` event is published to RabbitMQ which triggers automatic wallet creation.
+Users upload identity documents (stored on Cloudinary) and an admin approves or rejects them. The decision and a `KYC_APPROVED` / `KYC_REJECTED` event are saved in one transaction, and the outbox relay publishes the event. user-service sets `kycVerified` from it and wallet-service creates the wallet. Neither depends on the other being up at the moment the admin clicks approve.
 
 ### Notifications
 
-No service sends emails directly. Auth, User, KYC, and Wallet publish events to RabbitMQ — covering registration, login, OTP, password reset, KYC status changes, and wallet operations. The notification service consumes those events and handles dispatch. This keeps services decoupled and makes it straightforward to extend the notification layer without touching upstream services.
+No service sends emails directly. Auth, User, KYC, and Wallet publish events to RabbitMQ — covering registration, login, OTP, password reset, KYC status changes, and wallet operations. The notification service consumes those events and handles dispatch.
 
 ### Resilience
 
-The circuit breaker lives at the gateway level. When a downstream service becomes unhealthy, the circuit opens and a fallback response is returned immediately — preventing cascading failures across the system. The circuit moves through three states: `CLOSED` under normal operation, `OPEN` when the failure threshold is breached, and `HALF_OPEN` when testing whether the service has recovered. All RabbitMQ queues have Dead Letter Queues — failed messages are never silently dropped.
+Circuit breakers live at the gateway: when a service keeps failing, the circuit opens and a fallback is returned straight away instead of piling up timeouts. The gateway only retries `GET` requests — retrying a `POST` could repeat a payment, debit or KYC submission. Event consumers have dead letter queues, and the two outboxes keep retrying until RabbitMQ confirms it has the message.
 
 ---
 
@@ -660,6 +684,16 @@ gate-pay/
 ## Environment Variables
 
 Each service reads from its own `.env` file. Refer to the `.env.example` in each service directory for the required variables. Never commit `.env` files — they are git-ignored by default.
+
+A few that change behaviour rather than just pointing at infrastructure:
+
+| Variable | Service | What it does |
+|---|---|---|
+| `BOOTSTRAP_ADMIN_EMAILS` | user-service | Emails that get ADMIN when they register |
+| `EXPOSE_OTP_IN_RESPONSE` | auth-service | Return the OTP in the API response (local testing only, default `false`) |
+| `GATEWAY_RESPONSE_TIMEOUT` | gateway-service | How long the gateway waits for a service. Keep it above the slowest call (KYC uploads, provider calls) — 30s works |
+| `KYC_CB_TIMEOUT`, `PAYMENT_CB_TIMEOUT`, ... | gateway-service | Circuit breaker time limits per route |
+| `OUTBOX_*` | payment-service, kyc-service | Outbox relay polling interval, batch size and retry backoff |
 
 ---
 
