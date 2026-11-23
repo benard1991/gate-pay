@@ -14,6 +14,8 @@ import com.gatepay.kycservice.model.KycRequest;
 import com.gatepay.kycservice.producer.KycNotificationProducer;
 import com.gatepay.kycservice.repository.KycAuditTrailRepository;
 import com.gatepay.kycservice.repository.KycRepository;
+import com.gatepay.kycservice.config.RabbitMQConfig;
+import com.gatepay.kycservice.outbox.OutboxService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.CacheEvict;
@@ -40,6 +42,7 @@ public class AdminKycServiceImpl implements AdminKycService {
     private final KycNotificationProducer kycNotificationProducer;
     private final KycAuditTrailRepository auditTrailRepository;
     private final KycAuditMapper kycAuditMapper;
+    private final OutboxService outboxService;
 
     @Override
     @Transactional
@@ -129,19 +132,23 @@ public class AdminKycServiceImpl implements AdminKycService {
             kycNotificationProducer.sendKycNotification(message);
         }
 
-        // Update user-service
-        try {
-            boolean kycVerified = status == KycStatus.APPROVED;
-
-            userClient.updateKycVerified(saved.getUserId(), kycVerified);
-
-            if (kycVerified) {
-                kycNotificationProducer.sendKycApprovedEvent(saved.getUserId());
-            }
-
-        } catch (Exception ex) {
-            log.error("Failed to update user-service kycVerified | userId={} | error={}",
-                    saved.getUserId(), ex.getMessage(), ex);
+        // Tell the other services in the same transaction as the status change.
+        // user-service sets kycVerified and wallet-service creates the wallet when
+        // they get the event; the relay keeps retrying until RabbitMQ has it.
+        if (status == KycStatus.APPROVED || status == KycStatus.REJECTED) {
+            boolean approved = status == KycStatus.APPROVED;
+            outboxService.save(
+                    "KYC_REQUEST",
+                    String.valueOf(saved.getId()),
+                    approved ? "KYC_APPROVED" : "KYC_REJECTED",
+                    RabbitMQConfig.KYC_APPROVED_EXCHANGE,
+                    approved ? RabbitMQConfig.KYC_APPROVED_ROUTING_KEY : RabbitMQConfig.KYC_REJECTED_ROUTING_KEY,
+                    Map.of(
+                            "userId", saved.getUserId(),
+                            "kycId", saved.getId(),
+                            "event", approved ? "KYC_APPROVED" : "KYC_REJECTED"
+                    )
+            );
         }
 
         return kycDto;

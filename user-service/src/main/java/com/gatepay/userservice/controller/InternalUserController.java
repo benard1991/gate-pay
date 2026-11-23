@@ -1,10 +1,8 @@
 package com.gatepay.userservice.controller;
 
-import com.gatepay.userservice.dto.AdminUserResponseDto;
 import com.gatepay.userservice.dto.ApiResponse;
 import com.gatepay.userservice.dto.PasswordUpdateRequest;
 import com.gatepay.userservice.dto.UserDto;
-import com.gatepay.userservice.service.AdminService;
 import com.gatepay.userservice.service.UserService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -20,7 +18,6 @@ import org.springframework.web.bind.annotation.*;
 public class InternalUserController {
 
     private final UserService userService;
-    private final AdminService adminService;
 
     // Used by auth-service to check a login. The only response that carries the password hash.
     @GetMapping("/credentials")
@@ -44,13 +41,5 @@ public class InternalUserController {
                     .body(new ApiResponse<>(HttpStatus.INTERNAL_SERVER_ERROR.value(), "Failed to update password", null));
         }
         return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(), "Password updated successfully", null));
-    }
-
-    // Called by kyc-service when a KYC request is approved or rejected
-    @PutMapping("/{userId}/kyc-verified")
-    public ResponseEntity<ApiResponse<AdminUserResponseDto>> updateKycVerified(@PathVariable("userId") Long userId,
-                                                                               @RequestParam("kycVerified") boolean kycVerified) {
-        return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(), "User KYC verification updated successfully",
-                adminService.updateKycVerified(userId, kycVerified)));
     }
 }

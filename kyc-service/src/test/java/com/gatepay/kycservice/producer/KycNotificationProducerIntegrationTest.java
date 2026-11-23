@@ -24,6 +24,7 @@ import org.testcontainers.utility.DockerImageName;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @SpringBootTest
 @Testcontainers
@@ -134,20 +135,26 @@ class KycNotificationProducerIntegrationTest {
     }
 
     @Test
-    @DisplayName("should publish KYC approved event as JSON string")
-    void should_publish_kyc_approved_event() throws Exception {
+    @DisplayName("publishConfirmed delivers the outbox payload to the approved queue")
+    void publish_confirmed_reaches_approved_queue() throws Exception {
+        String payload = objectMapper.writeValueAsString(Map.of(
+                "userId", 123, "kycId", 7, "event", "KYC_APPROVED"));
 
-        Long userId = 123L;
-
-        producer.sendKycApprovedEvent(userId);
+        // throws if the broker doesn't ack or nothing is bound to the key
+        producer.publishConfirmed("kyc.exchange", "kyc.approved", payload);
 
         String json = (String) rabbitTemplate.receiveAndConvert(QUEUE_NAME, 5000);
-
         assertThat(json).isNotNull();
 
         Map<?, ?> parsed = objectMapper.readValue(json, Map.class);
-
         assertThat(parsed.get("userId")).isEqualTo(123);
         assertThat(parsed.get("event")).isEqualTo("KYC_APPROVED");
+    }
+
+    @Test
+    @DisplayName("publishConfirmed fails when no queue is bound to the routing key")
+    void publish_confirmed_fails_when_unroutable() {
+        assertThatThrownBy(() -> producer.publishConfirmed("kyc.exchange", "kyc.nobody-listens", "{}"))
+                .hasMessageContaining("unroutable");
     }
 }

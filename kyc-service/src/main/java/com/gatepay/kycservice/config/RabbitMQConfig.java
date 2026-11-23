@@ -21,6 +21,7 @@ public class RabbitMQConfig {
     // ─────────────────────────────────────────
     public static final String KYC_APPROVED_EXCHANGE    = "kyc.exchange";
     public static final String KYC_APPROVED_ROUTING_KEY = "kyc.approved";
+    public static final String KYC_REJECTED_ROUTING_KEY = "kyc.rejected";
     public static final String KYC_APPROVED_QUEUE       = "kyc.approved.queue";
 
     // ─────────────────────────────────────────
@@ -86,6 +87,8 @@ public class RabbitMQConfig {
                                          Jackson2JsonMessageConverter converter) {
         RabbitTemplate template = new RabbitTemplate(connectionFactory);
         template.setMessageConverter(converter);
+        // so we get the message back if nothing is bound to the routing key
+        template.setMandatory(true);
         return template;
     }
 }

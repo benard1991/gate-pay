@@ -1,7 +1,6 @@
 package com.gatepay.walletservice.client;
 
 import com.gatepay.walletservice.config.UserClientConfig;
-import com.gatepay.walletservice.dto.AdminUserResponseDto;
 import com.gatepay.walletservice.dto.ApiResponse;
 import com.gatepay.walletservice.dto.UserDto;
 import org.springframework.cloud.openfeign.FeignClient;
@@ -19,10 +18,4 @@ public interface UserServiceClient {
 
     @GetMapping("/internal/users/{userId}")
     ApiResponse<UserDto> getUserProfile(@PathVariable("userId") Long userId);
-
-    @PutMapping("/internal/users/{userId}/kyc-verified")
-    ApiResponse<AdminUserResponseDto> updateKycVerified(
-            @PathVariable("userId") Long userId,
-            @RequestParam("kycVerified") boolean kycVerified
-    );
 }
