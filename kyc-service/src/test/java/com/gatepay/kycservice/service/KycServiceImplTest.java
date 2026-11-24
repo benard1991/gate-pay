@@ -1,5 +1,12 @@
 package com.gatepay.kycservice.service;
 
+import com.gatepay.kycservice.model.KycDocument;
+import org.mockito.Spy;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.AbstractPlatformTransactionManager;
+import org.springframework.transaction.support.DefaultTransactionStatus;
+import org.springframework.transaction.support.TransactionTemplate;
 import com.gatepay.kycservice.client.UserClient;
 import com.gatepay.kycservice.dto.*;
 import com.gatepay.kycservice.enums.AccountStatus;
@@ -37,6 +44,14 @@ class KycServiceImplTest {
     @Mock private KycNotificationProducer kycNotificationProducer;
     @Mock private KycAuditTrailRepository auditTrailRepository;
     @Mock private KycAuditMapper kycAuditMapper;
+
+    // runs the callback like a real transaction, without a database
+    @Spy private TransactionTemplate transactionTemplate = new TransactionTemplate(new AbstractPlatformTransactionManager() {
+        @Override protected Object doGetTransaction() { return new Object(); }
+        @Override protected void doBegin(Object tx, TransactionDefinition def) { }
+        @Override protected void doCommit(DefaultTransactionStatus status) { }
+        @Override protected void doRollback(DefaultTransactionStatus status) { }
+    });
 
     @InjectMocks
     private KycServiceImpl kycService;
@@ -138,6 +153,47 @@ class KycServiceImplTest {
 
                 verify(kycRepository).save(any());
                 verify(auditTrailRepository).save(any(KycAuditTrail.class));
+            }
+        }
+    }
+
+    @Nested
+    class CreateKycOrdering {
+
+        @Test
+        void duplicateNinFailsBeforeUserLookupOrUpload() {
+            try (MockedStatic<FileUtils> fileUtilsMock = mockStatic(FileUtils.class)) {
+                when(kycRepository.existsByUserId(USER_ID)).thenReturn(false);
+                when(kycRepository.existsByNin(NIN)).thenReturn(true);
+
+                assertThatThrownBy(() -> kycService.createKycRequest(uploadDto(), IP_ADDRESS))
+                        .isInstanceOf(KycException.class)
+                        .hasMessageContaining("NIN");
+
+                verifyNoInteractions(userClient);
+                fileUtilsMock.verifyNoInteractions();
+            }
+        }
+
+        @Test
+        void uploadedFilesAreRemovedWhenTheSaveFails() {
+            try (MockedStatic<FileUtils> fileUtilsMock = mockStatic(FileUtils.class)) {
+                when(kycRepository.existsByUserId(USER_ID)).thenReturn(false);
+                when(kycRepository.existsByNin(NIN)).thenReturn(false);
+                when(kycRepository.existsByBvn(BVN)).thenReturn(false);
+                when(userClient.getUserProfile(USER_ID)).thenReturn(userResponse(activeUser()));
+                KycDocument uploaded = KycDocument.builder()
+                        .documentLink("https://res.cloudinary.com/demo/image/upload/v1/gatepay/kyc/id.jpg").build();
+                fileUtilsMock.when(() -> FileUtils.toKycDocuments(any(), any(), any()))
+                        .thenReturn(List.of(uploaded));
+                when(kycRepository.save(any()))
+                        .thenThrow(new DataIntegrityViolationException("Duplicate entry for key uk_nin"));
+
+                assertThatThrownBy(() -> kycService.createKycRequest(uploadDto(), IP_ADDRESS))
+                        .isInstanceOf(KycException.class);
+
+                verify(cloudinaryService).deleteByUrl(uploaded.getDocumentLink());
+                verifyNoInteractions(kycNotificationProducer);
             }
         }
     }
