@@ -12,7 +12,11 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "wallet_transactions", indexes = {
+@Table(name = "wallet_transactions",
+        uniqueConstraints = @UniqueConstraint(
+                name = "uk_wallet_transactions_wallet_idempotency",
+                columnNames = {"wallet_id", "idempotency_key"}),
+        indexes = {
         @Index(name = "idx_wallet_id", columnList = "wallet_id"),
         @Index(name = "idx_reference", columnList = "reference"),
         @Index(name = "idx_created_at", columnList = "created_at")
@@ -34,6 +38,10 @@ public class WalletTransaction {
 
     @Column(name = "reference", nullable = false, unique = true, length = 64)
     private String reference;
+
+    // Client-supplied key; unique per wallet so a retried request can't be applied twice
+    @Column(name = "idempotency_key", length = 64)
+    private String idempotencyKey;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "type", nullable = false)

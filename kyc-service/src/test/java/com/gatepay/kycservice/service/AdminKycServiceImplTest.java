@@ -9,6 +9,7 @@ import com.gatepay.kycservice.mapper.KycAuditMapper;
 import com.gatepay.kycservice.mapper.KycMapper;
 import com.gatepay.kycservice.model.KycAuditTrail;
 import com.gatepay.kycservice.model.KycRequest;
+import com.gatepay.kycservice.outbox.OutboxService;
 import com.gatepay.kycservice.producer.KycNotificationProducer;
 import com.gatepay.kycservice.repository.KycAuditTrailRepository;
 import com.gatepay.kycservice.repository.KycRepository;
@@ -35,6 +36,7 @@ class AdminKycServiceImplTest {
     @Mock private KycNotificationProducer kycNotificationProducer;
     @Mock private KycAuditTrailRepository auditTrailRepository;
     @Mock private KycAuditMapper kycAuditMapper;
+    @Mock private OutboxService outboxService;
 
     @InjectMocks
     private AdminKycServiceImpl adminKycService;
@@ -97,8 +99,9 @@ class AdminKycServiceImplTest {
         assertThat(result.getStatus()).isEqualTo(KycStatus.APPROVED);
         verify(auditTrailRepository).save(any());
         verify(kycNotificationProducer).sendKycNotification(any());
-        verify(kycNotificationProducer).sendKycApprovedEvent(USER_ID);
-        verify(userClient).updateKycVerified(USER_ID, true);
+        // the approval goes out through the outbox, not a direct call to user-service
+        verify(outboxService).save(eq("KYC_REQUEST"), anyString(), eq("KYC_APPROVED"),
+                eq("kyc.exchange"), eq("kyc.approved"), argThat(payloadFor(USER_ID, "KYC_APPROVED")));
     }
 
     @Test
@@ -115,8 +118,31 @@ class AdminKycServiceImplTest {
 
         adminKycService.updateKycStatus(KYC_ID, "REJECTED", null, IP_ADDRESS);
 
-        verify(userClient).updateKycVerified(USER_ID, false);
-        verify(kycNotificationProducer, never()).sendKycApprovedEvent(any());
+        // rejected goes on its own routing key so wallet-service never sees it
+        verify(outboxService).save(eq("KYC_REQUEST"), anyString(), eq("KYC_REJECTED"),
+                eq("kyc.exchange"), eq("kyc.rejected"), argThat(payloadFor(USER_ID, "KYC_REJECTED")));
+        verify(outboxService, never()).save(any(), any(), eq("KYC_APPROVED"), any(), any(), any());
+    }
+
+    @Test
+    void shouldNotWriteEvent_whenStatusIsNotFinal() {
+        KycRequest entity = pendingKycRequest();
+
+        when(kycRepository.findById(KYC_ID)).thenReturn(Optional.of(entity));
+        when(kycMapper.toDto(entity)).thenReturn(dto(KycStatus.PENDING), dto(KycStatus.PENDING));
+        when(kycRepository.save(entity)).thenReturn(entity);
+        when(userClient.getUserProfile(USER_ID)).thenReturn(userResponse(activeUser()));
+        when(kycAuditMapper.toJson(any())).thenReturn("{}");
+
+        adminKycService.updateKycStatus(KYC_ID, "PENDING", null, IP_ADDRESS);
+
+        verifyNoInteractions(outboxService);
+    }
+
+    private static org.mockito.ArgumentMatcher<Object> payloadFor(Long userId, String event) {
+        return arg -> arg instanceof java.util.Map<?, ?> m
+                && userId.equals(m.get("userId"))
+                && event.equals(m.get("event"));
     }
 
     @Test

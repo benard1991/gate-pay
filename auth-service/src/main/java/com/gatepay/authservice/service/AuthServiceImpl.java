@@ -8,6 +8,7 @@ import com.gatepay.authservice.exception.InvalidCredentialsException;
 import com.gatepay.authservice.exception.UserNotFoundException;
 import com.gatepay.authservice.producer.AuthNotificationProducer;
 import com.gatepay.authservice.service.otp.OtpService;
+import com.gatepay.authservice.security.OtpExposurePolicy;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -21,6 +22,7 @@ public class AuthServiceImpl implements AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final OtpService otpService;
+    private final OtpExposurePolicy otpExposurePolicy;
     private  final AuthNotificationProducer notificationProducer;
 
     @Override
@@ -51,7 +53,7 @@ public class AuthServiceImpl implements AuthService {
         return LoginOtpResponse.builder()
                 .message("OTP has been sent to your email. Please verify to complete login.")
                 .otpRequired(true)
-                .otp(otp)
+                .otp(otpExposurePolicy.forResponse(otp))
                 .email(userDto.getEmail())
                 .build();
     }

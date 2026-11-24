@@ -47,8 +47,10 @@ public class GatewaySecurityConfig {
                         .pathMatchers("/api/v1/payments/admin/**").hasAuthority("ROLE_ADMIN")
                         .pathMatchers("/api/v1/wallets/admin/**").hasAuthority("ROLE_ADMIN")
 
-                        // User endpoints
-                        .pathMatchers("/api/v1/users/**").hasAuthority("ROLE_USER")
+                        // Account endpoints: admins are users too (change own password, own profile)
+                        .pathMatchers("/api/v1/users/**").hasAnyAuthority("ROLE_USER", "ROLE_ADMIN")
+                        // Separation of duties: admins oversee money and KYC through the /admin
+                        // endpoints above, but never pay, spend, or submit KYC themselves
                         .pathMatchers("/api/v1/kyc/**").hasAuthority("ROLE_USER")
                         .pathMatchers("/api/v1/payments/**").hasAuthority("ROLE_USER")
                         .pathMatchers("/api/v1/wallets/**").hasAuthority("ROLE_USER")

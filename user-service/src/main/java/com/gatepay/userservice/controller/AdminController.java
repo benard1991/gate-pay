@@ -1,5 +1,7 @@
 package com.gatepay.userservice.controller;
 
+import com.gatepay.userservice.enums.AccountStatus;
+
 import com.gatepay.userservice.dto.AdminUserResponseDto;
 import com.gatepay.userservice.dto.ApiResponse;
 import com.gatepay.userservice.mapper.PaginatedResponse;
@@ -52,8 +54,11 @@ public class AdminController {
     }
 
     @GetMapping("/search")
-    public ResponseEntity<PaginatedResponse<AdminUserResponseDto>> searchUsers(@RequestParam(name = "keyword", required = false) String keyword, @PageableDefault(page = 0, size = 10) Pageable pageable) {
-        PaginatedResponse<AdminUserResponseDto> response = adminService.searchUsers(keyword, pageable);
+    public ResponseEntity<PaginatedResponse<AdminUserResponseDto>> searchUsers(
+            @RequestParam(name = "keyword", required = false) String keyword,
+            @RequestParam(name = "status", required = false) AccountStatus status,
+            @PageableDefault(page = 0, size = 10) Pageable pageable) {
+        PaginatedResponse<AdminUserResponseDto> response = adminService.searchUsers(keyword, status, pageable);
         return ResponseEntity.ok(response);
 
     }

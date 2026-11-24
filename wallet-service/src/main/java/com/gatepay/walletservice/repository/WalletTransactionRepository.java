@@ -23,6 +23,16 @@ public interface WalletTransactionRepository extends JpaRepository<WalletTransac
 
     boolean existsByReference(String reference);
 
+    @Query("""
+            SELECT t FROM WalletTransaction t
+            WHERE t.wallet.userId = :userId
+            AND t.idempotencyKey = :idempotencyKey
+            """)
+    Optional<WalletTransaction> findByUserIdAndIdempotencyKey(
+            @Param("userId") Long userId,
+            @Param("idempotencyKey") String idempotencyKey
+    );
+
     Page<WalletTransaction> findByWalletIdOrderByCreatedAtDesc(
             Long walletId,
             Pageable pageable

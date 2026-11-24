@@ -13,6 +13,8 @@ import com.gatepay.userservice.model.Role;
 import com.gatepay.userservice.model.User;
 import com.gatepay.userservice.repository.RoleRepository;
 import com.gatepay.userservice.repository.UserRepository;
+import com.gatepay.userservice.security.AdminBootstrapPolicy;
+import org.mockito.ArgumentCaptor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -46,6 +48,9 @@ class UserServiceImplTest {
     @Mock
     private PasswordEncoder passwordEncoder;
 
+    @Mock
+    private AdminBootstrapPolicy adminBootstrapPolicy;
+
     @InjectMocks
     private UserServiceImpl userService;
 
@@ -57,6 +62,10 @@ class UserServiceImplTest {
 
     @BeforeEach
     void setUp() {
+        // registration always looks up a role; return an existing one unless a test overrides it
+        lenient().when(roleRepository.findByName(any()))
+                .thenAnswer(inv -> Optional.of(Role.builder().name(inv.getArgument(0)).build()));
+
         // Build a standard active user for all tests to use
         activeUser = new User();
         activeUser.setId(1L);
@@ -118,6 +127,68 @@ class UserServiceImplTest {
     @Nested
     @DisplayName("createUser")
     class CreateUser {
+
+        private User captureSavedUser() {
+            ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
+            verify(userRepository).save(captor.capture());
+            return captor.getValue();
+        }
+
+        private void stubUniqueUser() {
+            when(userRepository.findWithRolesByEmail(userDto.getEmail())).thenReturn(Optional.empty());
+            when(userRepository.existsByPhoneNumber(userDto.getPhoneNumber())).thenReturn(false);
+            when(passwordEncoder.encode(anyString())).thenReturn("encodedPassword123");
+            when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+        }
+
+        @Test
+        @DisplayName("Ignores client-supplied ADMIN role, status and KYC flag on registration")
+        void ignoresPrivilegedFieldsFromClient() {
+            userDto.setRoles(List.of("ADMIN"));
+            userDto.setStatus(AccountStatus.ACTIVE);
+            userDto.setKycVerified(true);
+            stubUniqueUser();
+
+            userService.createUser(userDto);
+
+            User saved = captureSavedUser();
+            assertThat(saved.getRoles()).extracting(Role::getName).containsExactly(RoleEnum.USER);
+            assertThat(saved.isKycVerified()).isFalse();
+            assertThat(saved.getStatus()).isEqualTo(AccountStatus.ACTIVE);
+        }
+
+        @Test
+        @DisplayName("Ignores a client-supplied SUSPENDED/other status and starts the account ACTIVE")
+        void startsAccountActiveRegardlessOfClientStatus() {
+            userDto.setStatus(AccountStatus.SUSPENDED);
+            stubUniqueUser();
+
+            userService.createUser(userDto);
+
+            assertThat(captureSavedUser().getStatus()).isEqualTo(AccountStatus.ACTIVE);
+        }
+
+        @Test
+        @DisplayName("Grants ADMIN only to emails configured as bootstrap admins")
+        void grantsAdminToConfiguredBootstrapEmail() {
+            userDto.setRoles(List.of("USER"));
+            when(adminBootstrapPolicy.isBootstrapAdmin(userDto.getEmail())).thenReturn(true);
+            stubUniqueUser();
+
+            userService.createUser(userDto);
+
+            assertThat(captureSavedUser().getRoles()).extracting(Role::getName).containsExactly(RoleEnum.ADMIN);
+        }
+
+        @Test
+        @DisplayName("Does not return the password hash in the registration response")
+        void doesNotReturnPasswordHash() {
+            stubUniqueUser();
+
+            UserDto result = userService.createUser(userDto);
+
+            assertThat(result.getPassword()).isNull();
+        }
 
         @Test
         @DisplayName("Creates and returns a new user when the email and phone number are not already taken")

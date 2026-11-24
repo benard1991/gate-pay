@@ -7,6 +7,9 @@ import com.gatepay.userservice.dto.UserDto;
 public interface UserService {
     UserDto getUserByEmail(String email);
 
+    // includes the password hash; internal use by auth-service only
+    UserDto getUserCredentialsByEmail(String email);
+
     public UserDto createUser(UserDto userDto);
 
     UserDto getUserProfile(Long userId);

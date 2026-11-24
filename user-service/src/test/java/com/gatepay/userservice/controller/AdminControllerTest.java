@@ -333,9 +333,41 @@ class AdminControllerTest {
     class SearchUsers {
 
         @Test
+        @DisplayName("Filters by account status")
+        void filtersByStatus() throws Exception {
+            when(adminService.searchUsers(isNull(), eq(AccountStatus.SUSPENDED), any(Pageable.class)))
+                    .thenReturn(paginatedResponse);
+
+            mockMvc.perform(get("/users/admin/search").param("status", "SUSPENDED"))
+                    .andExpect(status().isOk());
+
+            verify(adminService).searchUsers(isNull(), eq(AccountStatus.SUSPENDED), any(Pageable.class));
+        }
+
+        @Test
+        @DisplayName("Combines keyword and status")
+        void combinesKeywordAndStatus() throws Exception {
+            when(adminService.searchUsers(eq("ada"), eq(AccountStatus.ACTIVE), any(Pageable.class)))
+                    .thenReturn(paginatedResponse);
+
+            mockMvc.perform(get("/users/admin/search").param("keyword", "ada").param("status", "ACTIVE"))
+                    .andExpect(status().isOk());
+
+            verify(adminService).searchUsers(eq("ada"), eq(AccountStatus.ACTIVE), any(Pageable.class));
+        }
+
+        @Test
+        @DisplayName("Returns 400 for an unknown status instead of ignoring it")
+        void rejectsUnknownStatus() throws Exception {
+            mockMvc.perform(get("/users/admin/search").param("status", "BANANA"))
+                    .andExpect(status().isBadRequest());
+            verifyNoInteractions(adminService);
+        }
+
+        @Test
         @DisplayName("Returns 200 and matching users when a keyword is provided")
         void returns200_withMatchingUsers_whenKeywordIsProvided() throws Exception {
-            when(adminService.searchUsers(eq("john"), any(Pageable.class)))
+            when(adminService.searchUsers(eq("john"), isNull(), any(Pageable.class)))
                     .thenReturn(paginatedResponse);
 
             mockMvc.perform(get("/users/admin/search")
@@ -348,7 +380,7 @@ class AdminControllerTest {
         @Test
         @DisplayName("Returns 200 and all users when no keyword is provided")
         void returns200_withAllUsers_whenNoKeywordProvided() throws Exception {
-            when(adminService.searchUsers(isNull(), any(Pageable.class)))
+            when(adminService.searchUsers(isNull(), isNull(), any(Pageable.class)))
                     .thenReturn(paginatedResponse);
 
             // keyword is marked as not required so omitting it should still return 200
@@ -364,7 +396,7 @@ class AdminControllerTest {
             PaginatedResponse<AdminUserResponseDto> emptyResponse =
                     new PaginatedResponse<>(List.of(), pagination);
 
-            when(adminService.searchUsers(eq("xyz"), any(Pageable.class)))
+            when(adminService.searchUsers(eq("xyz"), isNull(), any(Pageable.class)))
                     .thenReturn(emptyResponse);
 
             mockMvc.perform(get("/users/admin/search")
@@ -377,7 +409,7 @@ class AdminControllerTest {
         @Test
         @DisplayName("Calls the service exactly once with the keyword and pageable from the request")
         void callsServiceExactlyOnce_withKeywordAndPageable() throws Exception {
-            when(adminService.searchUsers(eq("john"), any(Pageable.class)))
+            when(adminService.searchUsers(eq("john"), isNull(), any(Pageable.class)))
                     .thenReturn(paginatedResponse);
 
             mockMvc.perform(get("/users/admin/search")
@@ -387,7 +419,7 @@ class AdminControllerTest {
                             .contentType(MediaType.APPLICATION_JSON))
                     .andExpect(status().isOk());
 
-            verify(adminService, times(1)).searchUsers(eq("john"), any(Pageable.class));
+            verify(adminService, times(1)).searchUsers(eq("john"), isNull(), any(Pageable.class));
         }
     }
 

@@ -42,9 +42,9 @@ public class UserDto {
     private String country;
 
 
-    @NotNull(message = "KYC verification status is required")
+    // Ignored on registration; the server always starts users at false
     private boolean kycVerified;
 
-    @NotNull(message = "Roles cannot be null")
+    // Ignored on registration; roles are assigned by the server
     private List<String> roles;
 }

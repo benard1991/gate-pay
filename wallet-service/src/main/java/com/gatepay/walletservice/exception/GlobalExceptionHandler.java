@@ -3,6 +3,7 @@ package com.gatepay.walletservice.exception;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -77,6 +78,21 @@ public class GlobalExceptionHandler {
         return buildError(
                 ErrorCode.METHOD_NOT_ALLOWED,
                 ex.getMessage(),
+                request.getRequestURI()
+        );
+    }
+
+    // ============================ CONCURRENT UPDATE =============================
+    // Safety net for paths that don't retry on their own (e.g. reversals)
+    @ExceptionHandler(OptimisticLockingFailureException.class)
+    public ResponseEntity<ErrorResponse> handleOptimisticLock(
+            OptimisticLockingFailureException ex, HttpServletRequest request) {
+
+        log.warn("Optimistic lock conflict at {}: {}", request.getRequestURI(), ex.getMessage());
+
+        return buildError(
+                ErrorCode.CONCURRENT_UPDATE,
+                ErrorCode.CONCURRENT_UPDATE.getMessage(),
                 request.getRequestURI()
         );
     }

@@ -13,6 +13,7 @@ public enum ErrorCode {
     USER_NOT_FOUND("USR_001", "User not found", HttpStatus.NOT_FOUND),
     USER_ALREADY_EXISTS("USR_002", "User with this email already exists", HttpStatus.CONFLICT),
     ACCOUNT_DISABLED("USR_003", "User account is disabled", HttpStatus.FORBIDDEN),
+    ACCESS_DENIED("USR_403", "You can only access your own resources", HttpStatus.FORBIDDEN),
     INVALID_OTP("USR_004", "Invalid OTP", HttpStatus.BAD_REQUEST),
 
     // Auth

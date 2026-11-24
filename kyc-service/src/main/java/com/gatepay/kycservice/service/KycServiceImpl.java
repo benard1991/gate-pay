@@ -20,6 +20,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -54,7 +55,11 @@ public class KycServiceImpl implements KycService {
 
     @Override
     @Transactional
-    @CacheEvict(value = "kycByUserId", key = "#dto.userId")
+    @Caching(evict = {
+            @CacheEvict(value = "kycByUserId", key = "#dto.userId"),
+            @CacheEvict(value = "kycAllRequests", allEntries = true),
+            @CacheEvict(value = "auditTrails", allEntries = true)
+    })
     public KycRequestDto createKycRequest(KycRequestUploadDto dto, String ipAddress) {
 
         ApiResponse<UserDto> userResponse = userClient.getUserProfile(dto.getUserId());
@@ -135,7 +140,11 @@ public class KycServiceImpl implements KycService {
     }
     @Override
     @Transactional
-    @CacheEvict(value = "kycByUserId", key = "#dto.userId")
+    @Caching(evict = {
+            @CacheEvict(value = "kycByUserId", key = "#dto.userId"),
+            @CacheEvict(value = "kycAllRequests", allEntries = true),
+            @CacheEvict(value = "auditTrails", allEntries = true)
+    })
     public KycRequestDto resubmitKyc(KycRequestUploadDto dto, String ipAddress) {
 
         ApiResponse<UserDto> userResponse = userClient.getUserProfile(dto.getUserId());
@@ -208,13 +217,24 @@ public class KycServiceImpl implements KycService {
 
     @Override
     @Transactional
-    @CacheEvict(value = "kycByUserId", key = "#kycId")
+    // cache is keyed by user id, not kyc id, so take it from the returned dto
+    @Caching(evict = {
+            @CacheEvict(value = "kycByUserId", key = "#result.userId"),
+            @CacheEvict(value = "kycAllRequests", allEntries = true),
+            @CacheEvict(value = "auditTrails", allEntries = true)
+    })
     public KycRequestDto updatePendingKyc(Long kycId, KycRequestUploadDto dto, String ipAddress) {
 
         KycRequest kyc = kycRepository.findByIdAndStatus(kycId, KycStatus.PENDING)
                 .orElseThrow(() -> new KycException(
                         "KYC request cannot be updated. Only PENDING requests are editable."
                 ));
+
+        // someone else's KYC gets the same answer as a missing one
+        if (!kyc.getUserId().equals(dto.getUserId())) {
+            throw new KycException(
+                    "KYC request cannot be updated. Only PENDING requests are editable.");
+        }
 
         if (dto.getNin() != null && kycRepository.existsByNin(dto.getNin())) {
             throw new KycException("This NIN is already associated with another user");

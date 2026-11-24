@@ -13,6 +13,9 @@ public interface TransactionService {
 
     WalletTransactionResponse getByReference(String reference);
 
+    // Only finds the transaction if it belongs to the given user's wallet
+    WalletTransactionResponse getByReferenceForUser(String reference, Long userId);
+
     PageResponse<WalletTransactionResponse> getTransactions(
             Long userId,
             TransactionFilterRequest filter

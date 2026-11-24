@@ -6,6 +6,7 @@ import com.gatepay.walletservice.dto.*;
 import com.gatepay.walletservice.service.TransactionService;
 import com.gatepay.walletservice.service.WalletService;
 import jakarta.validation.Valid;
+import com.gatepay.walletservice.security.CallerIdentity;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -24,6 +25,7 @@ public class UserWalletController {
     @GetMapping("/{userId}")
     public ResponseEntity<ApiResponse<WalletResponse>> getWallet(
             @PathVariable Long userId) {
+        CallerIdentity.requireSelf(userId);
         log.info("Fetching wallet for userId: {}", userId);
         return ResponseEntity.ok(ApiResponse.success("Wallet retrieved successfully",
                 walletService.getWalletByUserId(userId)));
@@ -32,6 +34,8 @@ public class UserWalletController {
     @PostMapping("/debit")
     public ResponseEntity<ApiResponse<WalletTransactionResponse>> debit(
             @Valid @RequestBody DebitWalletRequest request) {
+        // the wallet to debit must be the caller's own
+        CallerIdentity.requireSelf(request.getUserId());
         log.info("Debit request for userId: {} amount: {}", request.getUserId(), request.getAmount());
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success("Wallet debited successfully",
@@ -42,6 +46,7 @@ public class UserWalletController {
     public ResponseEntity<ApiResponse<PageResponse<WalletTransactionResponse>>> getTransactions(
             @PathVariable Long userId,
             @ModelAttribute TransactionFilterRequest filter) {
+        CallerIdentity.requireSelf(userId);
         log.info("Fetching transactions for userId: {}", userId);
         return ResponseEntity.ok(ApiResponse.success("Transactions retrieved successfully",
                 transactionService.getTransactions(userId, filter)));
@@ -52,6 +57,6 @@ public class UserWalletController {
             @PathVariable String reference) {
         log.info("Fetching transaction for reference: {}", reference);
         return ResponseEntity.ok(ApiResponse.success("Transaction retrieved successfully",
-                transactionService.getByReference(reference)));
+                transactionService.getByReferenceForUser(reference, CallerIdentity.currentUserId())));
     }
 }

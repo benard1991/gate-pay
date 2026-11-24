@@ -10,8 +10,14 @@ import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.*;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.data.domain.*;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.AbstractPlatformTransactionManager;
+import org.springframework.transaction.support.DefaultTransactionStatus;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -30,8 +36,24 @@ class TransactionServiceImplTest {
     @Mock private WalletEventService walletEventService;
     @Mock private ObjectMapper objectMapper;
 
-    @InjectMocks
     private TransactionServiceImpl transactionService;
+
+    // Runs the callback like a real transaction (including commit/rollback
+    // bookkeeping) without a database.
+    static class NoOpTransactionManager extends AbstractPlatformTransactionManager {
+        @Override protected Object doGetTransaction() { return new Object(); }
+        @Override protected void doBegin(Object tx, TransactionDefinition def) { }
+        @Override protected void doCommit(DefaultTransactionStatus status) { }
+        @Override protected void doRollback(DefaultTransactionStatus status) { }
+    }
+
+    @BeforeEach
+    void setUp() {
+        transactionService = new TransactionServiceImpl(
+                walletRepository, transactionRepository, idempotencyService,
+                walletEventService, objectMapper,
+                new TransactionTemplate(new NoOpTransactionManager()));
+    }
 
 
     private Wallet activeWallet() {
@@ -159,7 +181,8 @@ class TransactionServiceImplTest {
                     .isInstanceOf(WalletNotFoundException.class)
                     .hasMessageContaining("42");
 
-            verifyNoInteractions(transactionRepository, walletEventService);
+            verify(transactionRepository, never()).save(any());
+            verifyNoInteractions(walletEventService);
         }
 
         @Test
@@ -672,6 +695,178 @@ class TransactionServiceImplTest {
                     transactionService.getAllTransactions(filter);
 
             assertThat(result.getContent()).isEmpty();
+        }
+    }
+
+
+    // IDEMPOTENCY + CONCURRENCY
+
+    @Nested
+    @DisplayName("idempotency and concurrency")
+    class IdempotencyAndConcurrencyTests {
+
+        private WalletTransaction existingCredit() {
+            WalletTransaction tx = savedTransaction(activeWallet(), TransactionType.CREDIT,
+                    new BigDecimal("200.00"),
+                    new BigDecimal("1000.00"),
+                    new BigDecimal("1200.00"));
+            tx.setIdempotencyKey("idem-credit-001");
+            return tx;
+        }
+
+        @Test
+        @DisplayName("stores the idempotency key on the saved transaction")
+        void savesIdempotencyKey() throws Exception {
+            when(idempotencyService.getProcessedResponse("42", "idem-credit-001"))
+                    .thenReturn(Optional.empty());
+            when(walletRepository.findByUserIdWithLock(42L)).thenReturn(Optional.of(activeWallet()));
+            when(transactionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(objectMapper.writeValueAsString(any())).thenReturn("{}");
+
+            transactionService.credit(creditRequest(new BigDecimal("200.00")));
+
+            ArgumentCaptor<WalletTransaction> captor = ArgumentCaptor.forClass(WalletTransaction.class);
+            verify(transactionRepository).save(captor.capture());
+            assertThat(captor.getValue().getIdempotencyKey()).isEqualTo("idem-credit-001");
+        }
+
+        @Test
+        @DisplayName("returns the existing transaction from the DB when Redis has no entry")
+        void returnsExistingFromDbOnRedisMiss() throws Exception {
+            WalletTransaction existing = existingCredit();
+
+            when(idempotencyService.getProcessedResponse("42", "idem-credit-001"))
+                    .thenReturn(Optional.empty());
+            when(transactionRepository.findByUserIdAndIdempotencyKey(42L, "idem-credit-001"))
+                    .thenReturn(Optional.of(existing));
+            when(objectMapper.writeValueAsString(any())).thenReturn("{}");
+
+            WalletTransactionResponse response =
+                    transactionService.credit(creditRequest(new BigDecimal("200.00")));
+
+            assertThat(response.getReference()).isEqualTo("WLT-ABC123");
+            verify(walletRepository, never()).findByUserIdWithLock(any());
+            verify(walletRepository, never()).save(any());
+            verify(transactionRepository, never()).save(any());
+            verifyNoInteractions(walletEventService);
+            // re-populates the cache so the next duplicate is served from Redis
+            verify(idempotencyService).storeResponse(eq("42"), eq("idem-credit-001"), anyString());
+        }
+
+        @Test
+        @DisplayName("returns the winning transaction when a concurrent duplicate hits the unique key")
+        void concurrentDuplicateRejectedByUniqueKey() throws Exception {
+            WalletTransaction winner = existingCredit();
+
+            when(idempotencyService.getProcessedResponse("42", "idem-credit-001"))
+                    .thenReturn(Optional.empty());
+            // not there when we check, but committed by the other request by the time we insert
+            when(transactionRepository.findByUserIdAndIdempotencyKey(42L, "idem-credit-001"))
+                    .thenReturn(Optional.empty())
+                    .thenReturn(Optional.of(winner));
+            when(walletRepository.findByUserIdWithLock(42L)).thenReturn(Optional.of(activeWallet()));
+            when(transactionRepository.save(any()))
+                    .thenThrow(new DataIntegrityViolationException("Duplicate entry for uk_wallet_transactions_wallet_idempotency"));
+            when(objectMapper.writeValueAsString(any())).thenReturn("{}");
+
+            WalletTransactionResponse response =
+                    transactionService.credit(creditRequest(new BigDecimal("200.00")));
+
+            assertThat(response.getReference()).isEqualTo("WLT-ABC123");
+            verifyNoInteractions(walletEventService);
+        }
+
+        @Test
+        @DisplayName("rethrows a constraint violation that isn't an idempotency duplicate")
+        void rethrowsUnrelatedConstraintViolation() {
+            when(idempotencyService.getProcessedResponse("42", "idem-credit-001"))
+                    .thenReturn(Optional.empty());
+            when(walletRepository.findByUserIdWithLock(42L)).thenReturn(Optional.of(activeWallet()));
+            when(transactionRepository.save(any()))
+                    .thenThrow(new DataIntegrityViolationException("chk_amount"));
+
+            assertThatThrownBy(() -> transactionService.credit(creditRequest(new BigDecimal("200.00"))))
+                    .isInstanceOf(DataIntegrityViolationException.class);
+
+            verify(idempotencyService, never()).storeResponse(any(), any(), any());
+            verifyNoInteractions(walletEventService);
+        }
+
+        @Test
+        @DisplayName("retries on an optimistic lock conflict and succeeds with a fresh read")
+        void retriesOnOptimisticLockConflict() throws Exception {
+            when(idempotencyService.getProcessedResponse("42", "idem-credit-001"))
+                    .thenReturn(Optional.empty());
+            when(walletRepository.findByUserIdWithLock(42L))
+                    .thenReturn(Optional.of(activeWallet()), Optional.of(activeWallet()));
+            when(walletRepository.save(any()))
+                    .thenThrow(new ObjectOptimisticLockingFailureException(Wallet.class, 1L))
+                    .thenAnswer(inv -> inv.getArgument(0));
+            when(transactionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(objectMapper.writeValueAsString(any())).thenReturn("{}");
+
+            WalletTransactionResponse response =
+                    transactionService.credit(creditRequest(new BigDecimal("200.00")));
+
+            assertThat(response.getBalanceBefore()).isEqualByComparingTo("1000.00");
+            assertThat(response.getBalanceAfter()).isEqualByComparingTo("1200.00");
+            verify(walletRepository, times(2)).findByUserIdWithLock(42L);
+            verify(transactionRepository, times(1)).save(any());
+            verify(walletEventService, times(1)).publishCreditEvent(any());
+            verify(idempotencyService, times(1)).storeResponse(eq("42"), eq("idem-credit-001"), anyString());
+        }
+
+        @Test
+        @DisplayName("gives up with CONCURRENT_UPDATE after 3 conflicts and caches nothing")
+        void givesUpAfterMaxAttempts() {
+            when(idempotencyService.getProcessedResponse("42", "idem-debit-001"))
+                    .thenReturn(Optional.empty());
+            when(walletRepository.findByUserIdWithLock(42L)).thenAnswer(inv -> Optional.of(activeWallet()));
+            when(walletRepository.save(any()))
+                    .thenThrow(new ObjectOptimisticLockingFailureException(Wallet.class, 1L));
+
+            assertThatThrownBy(() -> transactionService.debit(debitRequest(new BigDecimal("100.00"))))
+                    .isInstanceOf(WalletServiceException.class)
+                    .satisfies(ex -> assertThat(((WalletServiceException) ex).getErrorCode())
+                            .isEqualTo(ErrorCode.CONCURRENT_UPDATE));
+
+            verify(walletRepository, times(3)).findByUserIdWithLock(42L);
+            verify(idempotencyService, never()).storeResponse(any(), any(), any());
+            verifyNoInteractions(walletEventService);
+        }
+
+        @Test
+        @DisplayName("does not cache or publish when the transaction fails")
+        void nothingCachedWhenTransactionFails() {
+            Wallet wallet = activeWallet();
+            wallet.setBalance(new BigDecimal("50.00"));
+            when(idempotencyService.getProcessedResponse("42", "idem-debit-001"))
+                    .thenReturn(Optional.empty());
+            when(walletRepository.findByUserIdWithLock(42L)).thenReturn(Optional.of(wallet));
+
+            assertThatThrownBy(() -> transactionService.debit(debitRequest(new BigDecimal("100.00"))))
+                    .isInstanceOf(InsufficientBalanceException.class);
+
+            verify(idempotencyService, never()).storeResponse(any(), any(), any());
+            verifyNoInteractions(walletEventService);
+        }
+
+        @Test
+        @DisplayName("still succeeds when Redis is down after the DB commit")
+        void redisFailureAfterCommitDoesNotFailRequest() throws Exception {
+            when(idempotencyService.getProcessedResponse("42", "idem-credit-001"))
+                    .thenReturn(Optional.empty());
+            when(walletRepository.findByUserIdWithLock(42L)).thenReturn(Optional.of(activeWallet()));
+            when(transactionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(objectMapper.writeValueAsString(any())).thenReturn("{}");
+            doThrow(new RuntimeException("Redis connection refused"))
+                    .when(idempotencyService).storeResponse(any(), any(), any());
+
+            WalletTransactionResponse response =
+                    transactionService.credit(creditRequest(new BigDecimal("200.00")));
+
+            assertThat(response.getBalanceAfter()).isEqualByComparingTo("1200.00");
+            verify(walletEventService).publishCreditEvent(any());
         }
     }
 }

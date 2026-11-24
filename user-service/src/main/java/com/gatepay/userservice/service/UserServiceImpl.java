@@ -3,7 +3,9 @@ package com.gatepay.userservice.service;
 import com.gatepay.userservice.dto.ChangePasswordRequest;
 import com.gatepay.userservice.dto.UpdateUserDto;
 import com.gatepay.userservice.dto.UserDto;
+import com.gatepay.userservice.enums.AccountStatus;
 import com.gatepay.userservice.enums.RoleEnum;
+import com.gatepay.userservice.security.AdminBootstrapPolicy;
 import com.gatepay.userservice.exception.AccountDisabledException;
 import com.gatepay.userservice.exception.InvalidPasswordException;
 import com.gatepay.userservice.exception.UserAlreadyExistsException;
@@ -12,6 +14,7 @@ import com.gatepay.userservice.mapper.UpdateUserMapper;
 import com.gatepay.userservice.validation.AccountStatusValidator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.annotation.Transactional;
@@ -37,6 +40,7 @@ public class UserServiceImpl implements UserService {
 
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
+    private final AdminBootstrapPolicy adminBootstrapPolicy;
 
     private PasswordEncoder passwordEncoder;
 
@@ -50,7 +54,18 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
+    public UserDto getUserCredentialsByEmail(String email) {
+        User user = userRepository.findWithRolesByEmail(email)
+                .orElseThrow(UserNotFoundException::new);
+        return UserMapper.toCredentialsDto(user);
+    }
+
+    @Override
     @Transactional
+    @Caching(evict = {
+            @CacheEvict(value = "adminUsers", allEntries = true),
+            @CacheEvict(value = "adminUserSearch", allEntries = true)
+    })
     public UserDto createUser(UserDto userDto) {
         if (userDto == null) {
             throw new IllegalArgumentException("User data must not be null");
@@ -72,30 +87,34 @@ public class UserServiceImpl implements UserService {
         user.setPhoneNumber(userDto.getPhoneNumber());
         user.setAddress(userDto.getAddress());
         user.setCountry(userDto.getCountry());
-        user.setStatus(userDto.getStatus());
-        user.setKycVerified(userDto.isKycVerified());
+        // Status, KYC and roles are decided by the server, never by the client.
+        // Accepting them from the request let anyone register as ADMIN or skip KYC.
+        user.setStatus(AccountStatus.ACTIVE);
+        user.setKycVerified(false);
 
-        if (userDto.getRoles() != null && !userDto.getRoles().isEmpty()) {
-            Set<Role> roles = userDto.getRoles()
-                    .stream()
-                    .map(roleName -> {
-                        RoleEnum roleEnum = RoleEnum.valueOf(roleName);
-                        return roleRepository.findByName(roleEnum)
-                                .orElseGet(() -> {
-                                    Role newRole = Role.builder()
-                                            .name(roleEnum)
-                                            .build();
-                                    return roleRepository.save(newRole);
-                                });
-                    })
-                    .collect(Collectors.toSet());
+        RoleEnum assignedRole = adminBootstrapPolicy.isBootstrapAdmin(userDto.getEmail())
+                ? RoleEnum.ADMIN
+                : RoleEnum.USER;
 
-            user.setRoles(roles);
+        if (userDto.getRoles() != null && userDto.getRoles().stream()
+                .anyMatch(r -> !RoleEnum.USER.name().equalsIgnoreCase(r))) {
+            log.warn("Ignoring client-supplied roles {} on registration for {}",
+                    userDto.getRoles(), userDto.getEmail());
         }
+
+        user.setRoles(Set.of(findOrCreateRole(assignedRole)));
 
         User savedUser = userRepository.save(user);
 
-        return UserMapper.toDto(savedUser);
+        UserDto result = UserMapper.toDto(savedUser);
+        // never send the password hash back to the client
+        result.setPassword(null);
+        return result;
+    }
+
+    private Role findOrCreateRole(RoleEnum roleEnum) {
+        return roleRepository.findByName(roleEnum)
+                .orElseGet(() -> roleRepository.save(Role.builder().name(roleEnum).build()));
     }
 
 

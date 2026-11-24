@@ -78,3 +78,8 @@ springdoc:
     path: /api-docs
   swagger-ui:
     path: /swagger-ui.html
+# Local testing only: return the OTP in login/forgot-password responses.
+# Leave false anywhere real; the OTP is then only sent by email.
+gatepay:
+  security:
+    expose-otp-in-response: ${EXPOSE_OTP_IN_RESPONSE:false}

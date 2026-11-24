@@ -62,4 +62,81 @@ class KycControllerTest {
                 .part(new MockPart("bvn", "98765432101".getBytes()));
     }
 
+    // form fields sent as request params so @ModelAttribute binds them reliably
+    private MockMultipartHttpServletRequestBuilder kycForm(String url, Long userIdInForm, Object... urlVars) {
+        return (MockMultipartHttpServletRequestBuilder) multipart(url, urlVars)
+                .file(new MockMultipartFile(
+                        "documents", "front.jpg", MediaType.IMAGE_JPEG_VALUE, new byte[]{1, 2, 3}))
+                .param("userId", String.valueOf(userIdInForm))
+                .param("nin", "12345678901")
+                .param("bvn", "98765432101");
+    }
+
+    @Nested
+    @DisplayName("GET /kyc/{userId}")
+    class GetKyc {
+
+        @Test
+        @DisplayName("returns the caller's own KYC")
+        void returnsOwnKyc() throws Exception {
+            when(kycService.getKycByUserId(USER_ID)).thenReturn(kycRequestDto(KycStatus.PENDING));
+
+            mockMvc.perform(get(BASE_URL + "/" + USER_ID).header("X-User-Id", USER_ID))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.userId").value(USER_ID));
+        }
+
+        @Test
+        @DisplayName("403 for another user's KYC")
+        void forbidsOtherUsersKyc() throws Exception {
+            mockMvc.perform(get(BASE_URL + "/" + USER_ID).header("X-User-Id", 2L))
+                    .andExpect(status().isForbidden());
+            verify(kycService, never()).getKycByUserId(any());
+        }
+
+        @Test
+        @DisplayName("403 without gateway identity")
+        void forbidsWithoutIdentity() throws Exception {
+            mockMvc.perform(get(BASE_URL + "/" + USER_ID))
+                    .andExpect(status().isForbidden());
+        }
+    }
+
+    @Nested
+    @DisplayName("Submitting KYC")
+    class Submit {
+
+        @Test
+        @DisplayName("403 when creating KYC for another user")
+        void forbidsCreatingForAnotherUser() throws Exception {
+            mockMvc.perform(kycForm(BASE_URL + "/create", 2L).header("X-User-Id", USER_ID))
+                    .andExpect(status().isForbidden());
+            verify(kycService, never()).createKycRequest(any(), any());
+        }
+
+        @Test
+        @DisplayName("resubmit processes the request exactly once")
+        void resubmitCallsServiceOnce() throws Exception {
+            when(kycService.resubmitKyc(any(), any())).thenReturn(kycRequestDto(KycStatus.PENDING));
+
+            mockMvc.perform(kycForm(BASE_URL + "/resubmit", USER_ID).header("X-User-Id", USER_ID))
+                    .andExpect(status().isOk());
+
+            verify(kycService, times(1)).resubmitKyc(any(), any());
+        }
+
+        @Test
+        @DisplayName("update edits the pending request and never creates a new one")
+        void updateDoesNotCreateNewRequest() throws Exception {
+            when(kycService.updatePendingKyc(eq(KYC_ID), any(), any())).thenReturn(kycRequestDto(KycStatus.PENDING));
+
+            mockMvc.perform(kycForm(BASE_URL + "/update/{kycId}", USER_ID, KYC_ID)
+                            .with(req -> { req.setMethod("PUT"); return req; })
+                            .header("X-User-Id", USER_ID))
+                    .andExpect(status().isOk());
+
+            verify(kycService, times(1)).updatePendingKyc(eq(KYC_ID), any(), any());
+            verify(kycService, never()).createKycRequest(any(), any());
+        }
+    }
 }

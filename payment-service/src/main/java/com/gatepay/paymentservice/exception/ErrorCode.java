@@ -13,6 +13,7 @@ public enum ErrorCode {
     USER_NOT_FOUND("USR_001", "User not found", HttpStatus.NOT_FOUND),                                                   // 404
     USER_ALREADY_EXISTS("USR_002", "User with this email already exists", HttpStatus.CONFLICT),                          // 409
     ACCOUNT_DISABLED("USR_003", "User account is disabled", HttpStatus.FORBIDDEN),                                       // 403
+    ACCESS_DENIED("PAY_403", "You can only access your own resources", HttpStatus.FORBIDDEN),
 
     // Auth
     INVALID_CREDENTIALS("AUTH_001", "Invalid credentials", HttpStatus.UNAUTHORIZED),                                     // 401
@@ -38,6 +39,10 @@ public enum ErrorCode {
     CURRENCY_NOT_SUPPORTED("PAY_006", "Currency not supported", HttpStatus.UNPROCESSABLE_ENTITY),                        // 422
     PAYMENT_NOT_FOUND("PAY_007", "Payment transaction not found", HttpStatus.NOT_FOUND),                                 // 404
     PAYMENT_ALREADY_PROCESSED("PAY_008", "Payment has already been processed", HttpStatus.CONFLICT),                     // 409
+    WALLET_NOT_FOUND("PAY_012", "No wallet found for this user", HttpStatus.UNPROCESSABLE_ENTITY),           // 422
+    WALLET_NOT_ACTIVE("PAY_013", "Wallet is not active", HttpStatus.UNPROCESSABLE_ENTITY),                    // 422
+    WALLET_MISMATCH("PAY_014", "Wallet does not belong to this user", HttpStatus.FORBIDDEN),                  // 403
+    WALLET_SERVICE_UNAVAILABLE("PAY_015", "Wallet service is currently unavailable", HttpStatus.SERVICE_UNAVAILABLE), // 503
     PROVIDER_ERROR("PAY_009", "Payment provider error", HttpStatus.BAD_GATEWAY),                                         // 502
     REFERENCE_ERROR("PAY_010", "Payment reference not found", HttpStatus.NOT_FOUND),                                     // 404
     PAYMENT_PROCESSING("PAY_011", "Payment is currently being processed", HttpStatus.ACCEPTED);                          // 202

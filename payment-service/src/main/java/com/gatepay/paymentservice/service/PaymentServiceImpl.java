@@ -7,11 +7,15 @@ import com.gatepay.paymentservice.exception.PaymentException;
 import com.gatepay.paymentservice.exception.ReferenceNotFoundException;
 import com.gatepay.paymentservice.helper.PaymentRequestHelper;
 import com.gatepay.paymentservice.helper.UserValidationHelper;
+import com.gatepay.paymentservice.exception.PaymentServiceException;
+import com.gatepay.paymentservice.exception.ErrorCode;
+import com.gatepay.paymentservice.helper.WalletValidationHelper;
 import com.gatepay.paymentservice.model.AuditLog;
 import com.gatepay.paymentservice.model.Payment;
 import com.gatepay.paymentservice.model.PaymentTransaction;
 import com.gatepay.paymentservice.model.enums.*;
-import com.gatepay.paymentservice.producer.PaymentEventProducer;
+import com.gatepay.paymentservice.config.RabbitMQConfig;
+import com.gatepay.paymentservice.outbox.OutboxService;
 import com.gatepay.paymentservice.repository.AuditLogRepository;
 import com.gatepay.paymentservice.repository.PaymentRepository;
 import com.gatepay.paymentservice.repository.PaymentTransactionRepository;
@@ -41,10 +45,11 @@ public class PaymentServiceImpl implements PaymentService {
     private final PaymentRepository paymentRepository;
     private final AuditLogRepository auditLogRepository;
     private final UserValidationHelper userValidationHelper;
+    private final WalletValidationHelper walletValidationHelper;
     private final PaymentRequestHelper paymentRequestHelper;
     private final IdempotencyService idempotencyService;
     private final ObjectMapper objectMapper;
-    private final PaymentEventProducer paymentEventProducer; // ← add this
+    private final OutboxService outboxService;
 
 
     private static final Duration IDEMPOTENCY_TTL = Duration.ofMinutes(30);
@@ -62,6 +67,8 @@ public class PaymentServiceImpl implements PaymentService {
 
         //  Validate user
         userValidationHelper.validateUserForPayment(request.getUserId());
+        // before the customer is sent to the provider, make sure there's a wallet to credit
+        walletValidationHelper.validateWalletForPayment(request.getUserId(), request.getWalletId());
 
         // Prepare request (reference, defaults, etc.)
         paymentRequestHelper.prepareRequest(request);
@@ -119,9 +126,8 @@ public class PaymentServiceImpl implements PaymentService {
                     return response;
                 }
 
-                throw new PaymentException(
-                        "Payment is being processed. Please wait a moment and try again."
-                );
+                throw new PaymentException(ErrorCode.PAYMENT_PROCESSING,
+                        "Payment is being processed. Please wait a moment and try again.");
             }
 
             // Lock acquired successfully
@@ -143,7 +149,7 @@ public class PaymentServiceImpl implements PaymentService {
 
                 if (!response.isSuccess()) {
                     releaseLockSafely(reference);
-                    throw new PaymentException(response.getMessage());
+                    throw new PaymentException(ErrorCode.PROVIDER_ERROR, response.getMessage());
                 }
 
                 // Persist transaction with proper error handling
@@ -157,9 +163,8 @@ public class PaymentServiceImpl implements PaymentService {
                     // Fetch the existing transaction
                     PaymentTransaction existingTransaction = transactionRepository
                             .findByReference(reference)
-                            .orElseThrow(() -> new PaymentException(
-                                    "Transaction conflict detected"
-                            ));
+                            .orElseThrow(() -> new PaymentException(ErrorCode.DUPLICATE_TRANSACTION,
+                                    "Transaction conflict detected"));
 
                     PaymentResponse existingResponse =
                             buildResponseFromTransaction(existingTransaction);
@@ -184,17 +189,20 @@ public class PaymentServiceImpl implements PaymentService {
                             cacheResponseSafely(reference, response);
                             return response;
                         })
-                        .orElseThrow(() -> new PaymentException(
-                                "Transaction conflict. Please try again."
-                        ));
+                        .orElseThrow(() -> new PaymentException(ErrorCode.DUPLICATE_TRANSACTION,
+                                "Transaction conflict. Please try again."));
 
+            } catch (PaymentServiceException ex) {
+                // already has the right code and message, don't wrap it again
+                releaseLockSafely(reference);
+                throw ex;
             } catch (Exception ex) {
                 log.error("Payment initialization failed | ref={}", reference, ex);
                 releaseLockSafely(reference);
-                throw new PaymentException("Payment initialization failed: " + ex.getMessage());
+                throw new PaymentException("Payment could not be started. Please try again.");
             }
 
-        } catch (PaymentException | DuplicateTransactionException e) {
+        } catch (PaymentServiceException e) {
             throw e; // Re-throw known exceptions
         } catch (Exception e) {
             log.error("Unexpected error during payment | ref={}", reference, e);
@@ -402,7 +410,7 @@ public class PaymentServiceImpl implements PaymentService {
                 paymentContext.verifyPayment(provider, reference);
 
         if (response == null || response.getData() == null) {
-            throw new PaymentException("Invalid verification response");
+            throw new PaymentException(ErrorCode.PROVIDER_ERROR, "Invalid verification response");
         }
 
         PaymentTransaction tx = transactionRepository
@@ -425,7 +433,7 @@ public class PaymentServiceImpl implements PaymentService {
 
         if (newStatus == TransactionStatus.SUCCESS) {
             createPaymentRecordIfAbsent(tx, provider);
-            publishPaymentSuccessEvent(tx);
+            recordPaymentSuccessEvent(tx);
         }
 
         saveAuditLog(tx, performedBy, ipAddress, userAgent, oldData, newStatus);
@@ -514,34 +522,37 @@ public class PaymentServiceImpl implements PaymentService {
     private TransactionStatus mapToInternalStatus(String providerStatus) {
         return switch (providerStatus.toUpperCase()) {
             case "SUCCESS", "SUCCESSFUL", "PAID", "COMPLETED" -> TransactionStatus.SUCCESS;
-            case "PENDING", "PROCESSING" -> TransactionStatus.PENDING;
+            // abandoned/ongoing just mean the customer hasn't finished on the checkout page yet;
+            // they can still pay, so it isn't a failure
+            case "PENDING", "PROCESSING", "ABANDONED", "ONGOING" -> TransactionStatus.PENDING;
             case "CANCELLED" -> TransactionStatus.CANCELLED;
             default -> TransactionStatus.FAILED;
         };
     }
 
-    private void publishPaymentSuccessEvent(PaymentTransaction tx) {
-        try {
-            Map<String, Object> payload = Map.of(
-                    "userId",    tx.getUserId(),
-                    "amount",    tx.getAmount(),
-                    "reference", tx.getReference(),
-                    "currency",  tx.getCurrency(),
-                    "event",     "PAYMENT_SUCCESS"
-            );
-            paymentEventProducer.sendPaymentSuccessEvent(payload);
-            log.info("Payment success event published | ref={} | userId={}",
-                    tx.getReference(), tx.getUserId());
-        } catch (Exception e) {
-            log.error("Failed to publish payment success event | ref={} | error={}",
-                    tx.getReference(), e.getMessage());
-        }
+    // Saved to the outbox in the same transaction as the status update.
+    // OutboxPublisher sends it to RabbitMQ after commit.
+    private void recordPaymentSuccessEvent(PaymentTransaction tx) {
+        Map<String, Object> payload = Map.of(
+                "userId", tx.getUserId(),
+                "amount", tx.getAmount(),
+                "reference", tx.getReference(),
+                "currency", tx.getCurrency(),
+                "event", "PAYMENT_SUCCESS"
+        );
+        outboxService.save(
+                "PaymentTransaction",
+                tx.getReference(),
+                "PAYMENT_SUCCESS",
+                RabbitMQConfig.PAYMENT_SUCCESS_EXCHANGE,
+                RabbitMQConfig.PAYMENT_SUCCESS_ROUTING_KEY,
+                payload
+        );
     }
 
 
-
     // READ OPERATIONS
-    
+
 
     @Override
     @Transactional(readOnly = true)

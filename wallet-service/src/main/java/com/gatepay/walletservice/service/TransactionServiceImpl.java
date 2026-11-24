@@ -19,6 +19,8 @@ import com.gatepay.walletservice.repository.WalletTransactionRepository;
 import com.gatepay.walletservice.specification.TransactionSpecification;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -26,10 +28,15 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 @Slf4j
 @Service
@@ -41,145 +48,183 @@ public class TransactionServiceImpl implements TransactionService {
     private final IdempotencyService          idempotencyService;
     private final WalletEventService          walletEventService;
     private final ObjectMapper                objectMapper;
+    private final TransactionTemplate         transactionTemplate;
+
+
+    private static final int MAX_LOCK_ATTEMPTS = 3;
+
+    // Result of one credit/debit attempt: either a new transaction, or one that
+    // was already recorded for the same idempotency key.
+    private record Outcome(WalletTransaction transaction, boolean created) {}
 
 
     // CREDIT
     @Override
-    @Transactional
     public WalletTransactionResponse credit(CreditWalletRequest request) {
-
-        // Idempotency check
-        String userId = String.valueOf(request.getUserId());
-        var cached = idempotencyService.getProcessedResponse(
-                userId, request.getIdempotencyKey()
+        return processIdempotently(
+                request.getUserId(),
+                request.getIdempotencyKey(),
+                () -> applyBalanceChange(
+                        request.getUserId(), request.getIdempotencyKey(),
+                        TransactionType.CREDIT, request.getAmount(), request.getSource(),
+                        request.getDescription(), request.getMetadata()),
+                walletEventService::publishCreditEvent
         );
-        if (cached.isPresent()) {
-            log.info("Duplicate credit request detected for userId: {}", userId);
-            return deserialize(cached.get());
-        }
-
-        // Fetch wallet with optimistic lock
-        Wallet wallet = walletRepository
-                .findByUserIdWithLock(request.getUserId())
-                .orElseThrow(() -> new WalletNotFoundException(
-                        "Wallet not found for user: " + request.getUserId()
-                ));
-
-        // Validate wallet status
-        validateWalletActive(wallet);
-
-        // Record balances before update
-        BigDecimal balanceBefore = wallet.getBalance();
-        BigDecimal balanceAfter  = balanceBefore.add(request.getAmount());
-
-        //  Update wallet balance
-        wallet.setBalance(balanceAfter);
-        wallet.setLedgerBalance(balanceAfter);
-        walletRepository.save(wallet);
-
-        //  Create transaction record
-        WalletTransaction transaction = WalletTransaction.builder()
-                .wallet(wallet)
-                .reference(generateReference())
-                .type(TransactionType.CREDIT)
-                .source(request.getSource())
-                .status(TransactionStatus.SUCCESS)
-                .amount(request.getAmount())
-                .balanceBefore(balanceBefore)
-                .balanceAfter(balanceAfter)
-                .description(request.getDescription())
-                .metadata(request.getMetadata())
-                .build();
-
-        WalletTransaction saved = transactionRepository.save(transaction);
-        log.info("Credit successful — userId: {} amount: {} ref: {}",
-                userId, request.getAmount(), saved.getReference());
-
-        //  Build response
-        WalletTransactionResponse response = mapToResponse(saved);
-
-        //  Store in Redis for idempotency
-        idempotencyService.storeResponse(userId, request.getIdempotencyKey(),
-                serialize(response));
-
-        // Publish event
-        walletEventService.publishCreditEvent(saved);
-
-        return response;
     }
 
 
     // DEBIT
     @Override
-    @Transactional
     public WalletTransactionResponse debit(DebitWalletRequest request) {
-
-        //  Idempotency check
-        String userId = String.valueOf(request.getUserId());
-        var cached = idempotencyService.getProcessedResponse(
-                userId, request.getIdempotencyKey()
+        return processIdempotently(
+                request.getUserId(),
+                request.getIdempotencyKey(),
+                () -> applyBalanceChange(
+                        request.getUserId(), request.getIdempotencyKey(),
+                        TransactionType.DEBIT, request.getAmount(), request.getSource(),
+                        request.getDescription(), request.getMetadata()),
+                walletEventService::publishDebitEvent
         );
+    }
+
+
+    // Idempotency flow shared by credit and debit:
+    //  1. Redis is a fast-path cache of earlier responses.
+    //  2. The DB unique key (wallet_id, idempotency_key) is the real guarantee.
+    //  3. Redis is written and events are published only AFTER the DB commit,
+    //     so a rolled-back attempt never looks "processed".
+    private WalletTransactionResponse processIdempotently(Long userIdValue,
+                                                          String idempotencyKey,
+                                                          Supplier<Outcome> operation,
+                                                          Consumer<WalletTransaction> publisher) {
+        String userId = String.valueOf(userIdValue);
+
+        var cached = idempotencyService.getProcessedResponse(userId, idempotencyKey);
         if (cached.isPresent()) {
-            log.info("Duplicate debit request detected for userId: {}", userId);
+            log.info("Duplicate request served from cache | userId={} key={}", userId, idempotencyKey);
             return deserialize(cached.get());
         }
 
-        //  Fetch wallet with optimistic lock
+        Outcome outcome;
+        try {
+            outcome = executeWithLockRetry(operation);
+        } catch (DataIntegrityViolationException e) {
+            // A concurrent request with the same key committed first and the
+            // unique key rejected ours, so return the transaction that won.
+            WalletTransaction existing = transactionRepository
+                    .findByUserIdAndIdempotencyKey(userIdValue, idempotencyKey)
+                    .orElseThrow(() -> e);
+            log.info("Concurrent duplicate rejected by DB | userId={} key={}", userId, idempotencyKey);
+            outcome = new Outcome(existing, false);
+        }
+
+        WalletTransactionResponse response = mapToResponse(outcome.transaction());
+        cacheResponse(userId, idempotencyKey, response);
+
+        if (outcome.created()) {
+            publisher.accept(outcome.transaction());
+        }
+        return response;
+    }
+
+    // Runs the operation in its own transaction, retrying when the wallet's
+    // @Version check fails because another transaction updated it first.
+    // Each retry re-reads the wallet, so it works on the latest balance.
+    private Outcome executeWithLockRetry(Supplier<Outcome> operation) {
+        for (int attempt = 1; ; attempt++) {
+            try {
+                return transactionTemplate.execute(status -> operation.get());
+            } catch (OptimisticLockingFailureException e) {
+                if (attempt >= MAX_LOCK_ATTEMPTS) {
+                    log.warn("Optimistic lock conflict, giving up after {} attempts", attempt);
+                    throw new WalletServiceException(ErrorCode.CONCURRENT_UPDATE);
+                }
+                log.warn("Optimistic lock conflict on attempt {}/{}, retrying",
+                        attempt, MAX_LOCK_ATTEMPTS);
+                backoff(attempt);
+            }
+        }
+    }
+
+    // Runs inside a transaction
+    private Outcome applyBalanceChange(Long userId, String idempotencyKey,
+                                       TransactionType type, BigDecimal amount,
+                                       TransactionSource source, String description,
+                                       String metadata) {
+
+        // Redis may have missed (expired, evicted, or the write failed),
+        // so check the database before applying anything
+        Optional<WalletTransaction> existing =
+                transactionRepository.findByUserIdAndIdempotencyKey(userId, idempotencyKey);
+        if (existing.isPresent()) {
+            log.info("Duplicate request found in DB | userId={} key={}", userId, idempotencyKey);
+            return new Outcome(existing.get(), false);
+        }
+
+        // Fetch wallet with optimistic lock
         Wallet wallet = walletRepository
-                .findByUserIdWithLock(request.getUserId())
+                .findByUserIdWithLock(userId)
                 .orElseThrow(() -> new WalletNotFoundException(
-                        "Wallet not found for user: " + request.getUserId()
+                        "Wallet not found for user: " + userId
                 ));
 
-        // Validate wallet status
         validateWalletActive(wallet);
 
-        //  Validate sufficient balance
-        if (wallet.getBalance().compareTo(request.getAmount()) < 0) {
+        if (type == TransactionType.DEBIT && wallet.getBalance().compareTo(amount) < 0) {
             throw new InsufficientBalanceException(
                     "Insufficient balance. Available: " + wallet.getBalance()
-                            + " Requested: " + request.getAmount()
+                            + " Requested: " + amount
             );
         }
 
-        //  Record balances before update
         BigDecimal balanceBefore = wallet.getBalance();
-        BigDecimal balanceAfter  = balanceBefore.subtract(request.getAmount());
+        BigDecimal balanceAfter  = type == TransactionType.CREDIT
+                ? balanceBefore.add(amount)
+                : balanceBefore.subtract(amount);
 
-        // Update wallet balance
         wallet.setBalance(balanceAfter);
         wallet.setLedgerBalance(balanceAfter);
         walletRepository.save(wallet);
 
-        // Create transaction record
         WalletTransaction transaction = WalletTransaction.builder()
                 .wallet(wallet)
                 .reference(generateReference())
-                .type(TransactionType.DEBIT)
-                .source(request.getSource())
+                .idempotencyKey(idempotencyKey)
+                .type(type)
+                .source(source)
                 .status(TransactionStatus.SUCCESS)
-                .amount(request.getAmount())
+                .amount(amount)
                 .balanceBefore(balanceBefore)
                 .balanceAfter(balanceAfter)
-                .description(request.getDescription())
-                .metadata(request.getMetadata())
+                .description(description)
+                .metadata(metadata)
                 .build();
 
         WalletTransaction saved = transactionRepository.save(transaction);
-        log.info("Debit successful — userId: {} amount: {} ref: {}",
-                userId, request.getAmount(), saved.getReference());
+        log.info("{} successful — userId: {} amount: {} ref: {}",
+                type == TransactionType.CREDIT ? "Credit" : "Debit",
+                userId, amount, saved.getReference());
 
-        //  Build response
-        WalletTransactionResponse response = mapToResponse(saved);
+        return new Outcome(saved, true);
+    }
 
-        // Store in Redis for idempotency
-        idempotencyService.storeResponse(userId, request.getIdempotencyKey(),
-                serialize(response));
+    // The DB already has the transaction, so a Redis failure must not fail the request
+    private void cacheResponse(String userId, String idempotencyKey, WalletTransactionResponse response) {
+        try {
+            idempotencyService.storeResponse(userId, idempotencyKey, serialize(response));
+        } catch (Exception e) {
+            log.warn("Could not cache idempotency response | userId={} key={}: {}",
+                    userId, idempotencyKey, e.getMessage());
+        }
+    }
 
-        //  Publish event
-        walletEventService.publishDebitEvent(saved);
-
-        return response;
+    private void backoff(int attempt) {
+        try {
+            Thread.sleep(ThreadLocalRandom.current().nextLong(10, 50) * attempt);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new WalletServiceException(ErrorCode.CONCURRENT_UPDATE);
+        }
     }
 
 
@@ -276,6 +321,18 @@ public class TransactionServiceImpl implements TransactionService {
                 ));
     }
 
+
+    // Same "not found" for someone else's transaction, so references can't be probed
+    @Override
+    @Transactional(readOnly = true)
+    public WalletTransactionResponse getByReferenceForUser(String reference, Long userId) {
+        return transactionRepository.findByReference(reference)
+                .filter(tx -> tx.getWallet().getUserId().equals(userId))
+                .map(this::mapToResponse)
+                .orElseThrow(() -> new TransactionNotFoundException(
+                        "Transaction not found: " + reference
+                ));
+    }
 
     // GET TRANSACTIONS (FILTERED + PAGED)
 
