@@ -17,6 +17,7 @@ import com.gatepay.kycservice.repository.KycAuditTrailRepository;
 import com.gatepay.kycservice.repository.KycRepository;
 import com.gatepay.kycservice.util.FileUtils;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
@@ -24,11 +25,13 @@ import org.springframework.cache.annotation.Caching;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class KycServiceImpl implements KycService {
@@ -41,6 +44,7 @@ public class KycServiceImpl implements KycService {
     private final KycNotificationProducer kycNotificationProducer;
     private final KycAuditTrailRepository auditTrailRepository;
     private final KycAuditMapper kycAuditMapper;
+    private final TransactionTemplate transactionTemplate;
 
 
     @Override
@@ -54,36 +58,21 @@ public class KycServiceImpl implements KycService {
 
 
     @Override
-    @Transactional
     @Caching(evict = {
             @CacheEvict(value = "kycByUserId", key = "#dto.userId"),
             @CacheEvict(value = "kycAllRequests", allEntries = true),
             @CacheEvict(value = "auditTrails", allEntries = true)
     })
     public KycRequestDto createKycRequest(KycRequestUploadDto dto, String ipAddress) {
+        long start = System.currentTimeMillis();
 
-        ApiResponse<UserDto> userResponse = userClient.getUserProfile(dto.getUserId());
-        UserDto user = userResponse.getData();
-
-        if (user == null) {
-            throw new UserNotFoundException("User with ID " + dto.getUserId() + " does not exist");
-        }
-
-        if (user.getStatus() != AccountStatus.ACTIVE) {
-            throw new AccountDisabledException("User account is " + user.getStatus());
-        }
-
+        // cheap local checks first, so a bad request fails before any remote call or upload
         if (kycRepository.existsByUserId(dto.getUserId())) {
             throw new KycException("You already have an existing KYC request");
         }
-
-        if (dto.getNin() != null && kycRepository.existsByNin(dto.getNin())) {
-            throw new KycException("This NIN is already associated with another user");
-        }
-
-        if (dto.getBvn() != null && kycRepository.existsByBvn(dto.getBvn())) {
-            throw new KycException("This BVN is already associated with another user");
-        }
+        checkNinAndBvnAreFree(dto);
+        UserDto user = activeUser(dto.getUserId(), "User with ID " + dto.getUserId() + " does not exist");
+        long checked = System.currentTimeMillis();
 
         KycRequest kycRequest = KycRequest.builder()
                 .userId(dto.getUserId())
@@ -95,40 +84,17 @@ public class KycServiceImpl implements KycService {
                 .updatedAt(LocalDateTime.now())
                 .build();
 
+        // upload before opening a transaction so no DB connection is held while Cloudinary works
         List<KycDocument> documents = FileUtils.toKycDocuments(dto.getDocuments(), kycRequest, cloudinaryService);
         kycRequest.setDocuments(documents);
+        long uploaded = System.currentTimeMillis();
 
+        KycRequestDto kycDto;
         try {
-            KycRequest saved = kycRepository.save(kycRequest);
-            KycRequestDto kycDto = kycMapper.toDto(saved);
-
-            KycAuditTrail audit = KycAuditTrail.builder()
-                    .kycId(saved.getId())
-                    .performedBy(saved.getUserId())
-                    .performedByName(user.getFirstName())
-                    .action("CREATE")
-                    .oldValue(null)
-                    .newValue(kycAuditMapper.toJson(kycDto))
-                    .ipAddress(ipAddress)
-                    .performedAt(LocalDateTime.now())
-                    .build();
-
-            auditTrailRepository.save(audit);
-
-            NotificationMessage message = new NotificationMessage(
-                    user.getEmail(),
-                    "EMAIL",
-                    "KYC Request Submitted",
-                    "Dear " + user.getFirstName()
-                            + ",\n\nYour KYC request has been successfully submitted and is pending review.\n\nThank you.",
-                    Map.of("userId", kycDto.getUserId(), "kycId", kycDto.getId())
-            );
-
-            kycNotificationProducer.sendKycNotification(message);
-
-            return kycDto;
-
+            kycDto = transactionTemplate.execute(status ->
+                    saveWithAudit(kycRequest, "CREATE", user.getFirstName(), ipAddress));
         } catch (DataIntegrityViolationException e) {
+            deleteUploaded(documents);
             String message = e.getMessage() != null ? e.getMessage().toLowerCase() : "";
             if (message.contains("nin")) {
                 throw new KycException("This NIN is already associated with another user");
@@ -136,42 +102,43 @@ public class KycServiceImpl implements KycService {
                 throw new KycException("This BVN is already associated with another user");
             }
             throw new KycException("Duplicate KYC data detected");
+        } catch (RuntimeException e) {
+            deleteUploaded(documents);
+            throw e;
         }
+
+        log.info("KYC request {} created for userId={} | checks {} ms, upload {} ms, save {} ms",
+                kycDto.getId(), dto.getUserId(), checked - start, uploaded - checked,
+                System.currentTimeMillis() - uploaded);
+
+        kycNotificationProducer.sendKycNotification(new NotificationMessage(
+                user.getEmail(),
+                "EMAIL",
+                "KYC Request Submitted",
+                "Dear " + user.getFirstName()
+                        + ",\n\nYour KYC request has been successfully submitted and is pending review.\n\nThank you.",
+                Map.of("userId", kycDto.getUserId(), "kycId", kycDto.getId())
+        ));
+        return kycDto;
     }
     @Override
-    @Transactional
     @Caching(evict = {
             @CacheEvict(value = "kycByUserId", key = "#dto.userId"),
             @CacheEvict(value = "kycAllRequests", allEntries = true),
             @CacheEvict(value = "auditTrails", allEntries = true)
     })
     public KycRequestDto resubmitKyc(KycRequestUploadDto dto, String ipAddress) {
+        long start = System.currentTimeMillis();
 
-        ApiResponse<UserDto> userResponse = userClient.getUserProfile(dto.getUserId());
-        UserDto user = userResponse.getData();
-
-        if (user == null) {
-            throw new UserNotFoundException("User with ID " + dto.getUserId() + " not found");
-        }
-
-        if (user.getStatus() != AccountStatus.ACTIVE) {
-            throw new AccountDisabledException("User account is " + user.getStatus());
-        }
-
+        // cheap local checks first
         if (kycRepository.existsByUserIdAndStatus(dto.getUserId(), KycStatus.PENDING)) {
             throw new KycException("You already have a pending KYC request");
         }
-
-        if (dto.getNin() != null && kycRepository.existsByNin(dto.getNin())) {
-            throw new KycException("This NIN is already associated with another user");
-        }
-
-        if (dto.getBvn() != null && kycRepository.existsByBvn(dto.getBvn())) {
-            throw new KycException("This BVN is already associated with another user");
-        }
-
+        checkNinAndBvnAreFree(dto);
         kycRepository.findTopByUserIdAndStatusOrderByCreatedAtDesc(dto.getUserId(), KycStatus.REJECTED)
                 .orElseThrow(() -> new KycException("No rejected KYC found to resubmit"));
+        UserDto user = activeUser(dto.getUserId(), "User with ID " + dto.getUserId() + " not found");
+        long checked = System.currentTimeMillis();
 
         KycRequest newKyc = KycRequest.builder()
                 .userId(dto.getUserId())
@@ -185,34 +152,71 @@ public class KycServiceImpl implements KycService {
 
         List<KycDocument> documents = FileUtils.toKycDocuments(dto.getDocuments(), newKyc, cloudinaryService);
         newKyc.setDocuments(documents);
+        long uploaded = System.currentTimeMillis();
 
-        KycRequest saved = kycRepository.save(newKyc);
-        KycRequestDto kycDto = kycMapper.toDto(saved);
+        KycRequestDto kycDto;
+        try {
+            kycDto = transactionTemplate.execute(status ->
+                    saveWithAudit(newKyc, "RESUBMIT", user.getFirstName() + " " + user.getLastName(), ipAddress));
+        } catch (RuntimeException e) {
+            deleteUploaded(documents);
+            throw e;
+        }
 
-        KycAuditTrail audit = KycAuditTrail.builder()
-                .kycId(saved.getId())
-                .performedBy(saved.getUserId())
-                .performedByName(user.getFirstName() + " " + user.getLastName())
-                .action("RESUBMIT")
-                .oldValue(null)
-                .newValue(kycAuditMapper.toJson(kycDto))
-                .ipAddress(ipAddress)
-                .performedAt(LocalDateTime.now())
-                .build();
+        log.info("KYC request {} resubmitted for userId={} | checks {} ms, upload {} ms, save {} ms",
+                kycDto.getId(), dto.getUserId(), checked - start, uploaded - checked,
+                System.currentTimeMillis() - uploaded);
 
-        auditTrailRepository.save(audit);
-
-        NotificationMessage message = new NotificationMessage(
+        kycNotificationProducer.sendKycNotification(new NotificationMessage(
                 user.getEmail(),
                 "EMAIL",
                 "KYC Resubmission Successful",
                 String.format("Dear %s, your KYC has been resubmitted successfully.", user.getFirstName()),
                 Map.of("userId", kycDto.getUserId(), "kycId", kycDto.getId())
-        );
-
-        kycNotificationProducer.sendKycNotification(message);
-
+        ));
         return kycDto;
+    }
+
+    private void checkNinAndBvnAreFree(KycRequestUploadDto dto) {
+        if (dto.getNin() != null && kycRepository.existsByNin(dto.getNin())) {
+            throw new KycException("This NIN is already associated with another user");
+        }
+        if (dto.getBvn() != null && kycRepository.existsByBvn(dto.getBvn())) {
+            throw new KycException("This BVN is already associated with another user");
+        }
+    }
+
+    private UserDto activeUser(Long userId, String notFoundMessage) {
+        UserDto user = userClient.getUserProfile(userId).getData();
+        if (user == null) {
+            throw new UserNotFoundException(notFoundMessage);
+        }
+        if (user.getStatus() != AccountStatus.ACTIVE) {
+            throw new AccountDisabledException("User account is " + user.getStatus());
+        }
+        return user;
+    }
+
+    // runs inside the caller's transaction
+    private KycRequestDto saveWithAudit(KycRequest kycRequest, String action, String performedByName, String ipAddress) {
+        KycRequest saved = kycRepository.save(kycRequest);
+        KycRequestDto kycDto = kycMapper.toDto(saved);
+        auditTrailRepository.save(KycAuditTrail.builder()
+                .kycId(saved.getId())
+                .performedBy(saved.getUserId())
+                .performedByName(performedByName)
+                .action(action)
+                .oldValue(null)
+                .newValue(kycAuditMapper.toJson(kycDto))
+                .ipAddress(ipAddress)
+                .performedAt(LocalDateTime.now())
+                .build());
+        return kycDto;
+    }
+
+    // the request wasn't saved, so its files would be orphaned in Cloudinary
+    private void deleteUploaded(List<KycDocument> documents) {
+        documents.forEach(doc -> cloudinaryService.deleteByUrl(doc.getDocumentLink()));
     }
 
     @Override

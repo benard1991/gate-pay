@@ -147,16 +147,41 @@ class CloudinaryServiceTest {
         }
 
         @Test
-        @DisplayName("always includes a transformation param")
-        void shouldAlwaysIncludeTransformationParam() throws IOException {
+        @DisplayName("stores documents as uploaded, no crop or resize")
+        void shouldNotTransformDocumentsOnUpload() throws IOException {
             when(file.getSize()).thenReturn(1024L);
             stubSuccessfulUpload();
 
             cloudinaryService.uploadFile(file, null);
 
+            // cropping to 300x300 cut off parts of ID cards and slowed every upload down
             verify(uploader).upload(any(byte[].class), argThat(params ->
-                    ((Map<?, ?>) params).containsKey("transformation")
+                    !((Map<?, ?>) params).containsKey("transformation")
             ));
+        }
+
+        @Test
+        @DisplayName("works out resource type and public id from a delivery URL")
+        void shouldParseCloudinaryUrl() {
+            String[] image = CloudinaryService.resourceTypeAndPublicId(
+                    "https://res.cloudinary.com/demo/image/upload/v1795443423/gatepay/kyc/kyc/user_14/123_id.jpeg.jpg");
+            assertThat(image).containsExactly("image", "gatepay/kyc/kyc/user_14/123_id.jpeg");
+
+            String[] raw = CloudinaryService.resourceTypeAndPublicId(
+                    "https://res.cloudinary.com/demo/raw/upload/v1/gatepay/kyc/doc.pdf");
+            assertThat(raw).containsExactly("raw", "gatepay/kyc/doc.pdf");
+        }
+
+        @Test
+        @DisplayName("deleting an orphaned file never throws")
+        void deleteIsBestEffort() throws Exception {
+            when(cloudinary.uploader()).thenReturn(uploader);
+            when(uploader.destroy(anyString(), anyMap())).thenThrow(new IOException("network down"));
+
+            cloudinaryService.deleteByUrl("https://res.cloudinary.com/demo/image/upload/v1/gatepay/kyc/a.jpg");
+            cloudinaryService.deleteByUrl("not a cloudinary url");
+
+            verify(uploader).destroy(eq("gatepay/kyc/a"), anyMap());
         }
 
         @Test
